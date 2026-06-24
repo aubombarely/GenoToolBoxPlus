@@ -1,0 +1,24 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+title: "GenoToolBoxPlus"
+abstract: >
+  GenoToolBoxPlus is a collection of lightweight, zero-dependency Python CLI
+  utilities for genomics and genome annotation tasks. Scripts include FASTA
+  renaming, FASTA statistics, and GFA-to-FASTA conversion. Each script uses
+  the Python standard library only and runs in any Python 3.10+ environment
+  without conda.
+authors:
+  - family-names: Bombarely
+    given-names: Aureliano
+    email: aubombarely@gmail.com
+    orcid: ""
+version: "v0.0.1"
+date-released: "2026-06-24"
+license: MIT
+repository-code: "https://github.com/aubombarely/GenoToolBoxPlus"
+keywords:
+  - genomics
+  - FASTA
+  - GFA
+  - bioinformatics utilities
+  - command-line tools
