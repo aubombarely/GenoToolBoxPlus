@@ -2,6 +2,12 @@
 
 A collection of general-purpose command-line scripts for genomics and genome annotation tasks.
 
+## Index
+
+- [FastaRename.py](#fastarenamepy) — Rename sequence IDs in a FASTA file using a two-column TSV mapping
+- [FastaStats.py](#fastastatspy) — Compute per-assembly and nucleotide-composition statistics for a FASTA file
+- [GFA2FASTA.py](#gfa2fastapy) — Convert GFA (v1 or v2) assembly graph segments to FASTA
+
 ## Requirements
 
 - Python 3.9+
