@@ -18,6 +18,7 @@ Apply those standards to any new scripts added here.
 | `scripts/FastaRename.py` | Rename sequence IDs in a FASTA file using a two-column TSV mapping |
 | `scripts/FastaStats.py` | Compute per-sequence and summary statistics for a FASTA file |
 | `scripts/GFA2FASTA.py` | Convert GFA assembly graph format to FASTA |
+| `scripts/NCBI_DownloadGenome.py` | Download genome FASTA/GFF3 from NCBI (accessions.txt, same format as annotseba), optional SeqID renaming |
 
 ## Design principles for this collection
 
