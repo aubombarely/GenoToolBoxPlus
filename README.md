@@ -179,44 +179,65 @@ falls back to `--rename_prefix`.
 
 **SeqID renaming scheme (`--rename_seqids`)**
 
-Inferred from each FASTA header's description text:
+| Category | New ID | How it's detected | Number source |
+|---|---|---|---|
+| Chromosome | `{prefix}C##` | Description says chromosome / pseudomolecule / linkage group / `LG` | Parsed from the description as-is |
+| Mitochondrion | `{prefix}MIT##` | Description says mitochondrion | Order of appearance |
+| Chloroplast / plastid | `{prefix}PLT##` | Description says chloroplast / plastid | Order of appearance |
+| Scaffold | `{prefix}SCF##` | Not chromosome/organelle, and the **sequence itself contains an N** | Order of appearance |
+| Contig | `{prefix}CTG##` | Not chromosome/organelle, and the sequence has **no N** | Order of appearance |
 
-| Category | New ID | Number source |
-|---|---|---|
-| Chromosome | `{prefix}C##` | Parsed from the description (`chromosome 1`, `chromosome I`, `chromosome X`) |
-| Mitochondrion | `{prefix}MIT##` | Order of appearance |
-| Chloroplast / plastid | `{prefix}PLT##` | Order of appearance |
-| Scaffold | `{prefix}SCF##` | Order of appearance |
-| Anything else (unplaced/unlocalized contigs, etc.) | `{prefix}CTG##` | Order of appearance |
+Chromosome numbers accept Arabic digits (`chromosome 1`), Roman numerals
+(`chromosome I`, common in yeast/fungal genomes — auto-detected per genome,
+not per sequence, and converted to Arabic for zero-padding), single-letter
+sex chromosomes (`X`/`Y`/`W`/`Z`, kept literal e.g. `{prefix}CX` unless the
+rest of the genome is clearly Roman-numbered), and letter-suffixed polyploid
+labels (`1A`, `2B`, `3D`, common in wheat-like subgenomes — kept literal,
+original numbering preserved, since these aren't a plain integer). Chromosome
+zero-padding width is the width of the largest plain number in that genome
+(minimum 2 digits); SCF/CTG/MIT/PLT are numbered by order of appearance in
+the file, not by any number in their own description.
 
-Chromosome numbers accept Arabic digits (`chromosome 1`) or Roman numerals
-(`chromosome I`, common in yeast/fungal genomes) — Roman numerals are
-auto-detected per genome (not per sequence) and converted to Arabic for
-zero-padding. Single-letter sex chromosomes (`X`/`Y`/`W`/`Z`) are kept
-literal (e.g. `{prefix}CX`), unless the rest of the genome is clearly
-Roman-numbered, in which case a lone `X` is treated as Roman numeral 10.
-Zero-padding width is the width of the largest number in that category
-(minimum 2 digits); non-chromosome categories are numbered by order of
-appearance in the file, not by any number in their own description.
+The SCF-vs-CTG split is decided from actual sequence content, not the
+header text — a scaffold-like keyword in the description is not required
+(and isn't checked); what matters is whether the sequence contains any `N`.
+
+**Sanity checks**
+
+Every FASTA scan (for renaming and/or `--report_metrics`) verifies all
+SeqIDs are unique, aborting that accession with a clear error otherwise —
+duplicate IDs would otherwise silently corrupt classification, metrics, and
+renaming, since results are keyed by SeqID. It also flags any non-standard
+IUPAC ambiguity codes found (anything besides `A`/`C`/`G`/`T`/`N`, e.g. `Y`,
+`R`, `W`), which can break aligners or variant callers that assume a plain
+4-letter(+N) alphabet.
 
 **Assembly metrics (`--report_metrics`)**
 
 For each processed accession (whether just downloaded or already present
 from a previous run): `seq_n`, `assembly_size`, `avg_length`, `n50`, `l50`,
-`n90`, `l90`, and `annotation_gff` (`YES`/`NO`, whether a GFF3 was
-downloaded). Written as `{output}/summary.tsv` (one row per accession) and
-printed as an ASCII table to stderr, e.g.:
+`n90`, `l90`, per-category counts `n_chr`/`n_scf`/`n_ctg`/`n_mit`/`n_plt`,
+`ambig_nt_count`/`ambig_nt_chars` (non-standard IUPAC codes found, if any),
+and `annotation_gff` (`YES`/`NO`, whether a GFF3 was downloaded). Written as
+`{output}/summary.tsv` (one row per accession) and printed as an ASCII table
+to stderr, e.g.:
 
 ```
-+--------------------------+-----------------+-------+---------------+------------+--------+-----+--------+-----+------------------+
-| Species                  |       Accession | Seq_N | Assembly_size | Avg_length |    N50 | L50 |    N90 | L90 | Annotation (GFF) |
-+--------------------------+-----------------+-------+---------------+------------+--------+-----+--------+-----+------------------+
-| Saccharomyces_cerevisiae | GCF_000146045.2 |    17 |      12157105 |  715123.82 | 924431 |   6 | 439888 |  13 |              YES |
-+--------------------------+-----------------+-------+---------------+------------+--------+-----+--------+-----+------------------+
++--------------------------+-----------------+-------+---------------+------------+--------+-----+--------+-----+-----+-----+-----+-----+-----+----------+-------------+------------------+
+| Species                  |       Accession | Seq_N | Assembly_size | Avg_length |    N50 | L50 |    N90 | L90 | CHR | SCF | CTG | MIT | PLT | Ambig_NT | Ambig_chars | Annotation (GFF) |
++--------------------------+-----------------+-------+---------------+------------+--------+-----+--------+-----+-----+-----+-----+-----+-----+----------+-------------+------------------+
+| Saccharomyces_cerevisiae | GCF_000146045.2 |    17 |      12157105 |  715123.82 | 924431 |   6 | 439888 |  13 |  16 |   0 |   0 |   1 |   0 |        0 |             |              YES |
++--------------------------+-----------------+-------+---------------+------------+--------+-----+--------+-----+-----+-----+-----+-----+-----+----------+-------------+------------------+
 ```
 
-Metrics are computed from the FASTA actually written to `--output` (i.e.
-the renamed version if `--rename_seqids` was used).
+On a fresh download, metrics are computed from the original downloaded
+FASTA (before any renaming), so `--rename_seqids --strip_description`
+together can't blind CHR/MIT/PLT classification by removing the header
+descriptions it depends on. On an accession skipped as already-downloaded
+(no fresh copy available), metrics fall back to the file in `--output`; if
+that file was previously written with `--strip_description`, CHR/MIT/PLT
+counts can't be recovered from it and a warning is printed — use `--force`
+to recompute from a fresh download in that case.
 
 **Notes**
 - Downloads via the [NCBI Datasets REST API v2](https://www.ncbi.nlm.nih.gov/datasets/docs/v2/reference-docs/rest-api/) directly (`urllib`/`zipfile`, both standard library) — no `datasets` CLI tool required.

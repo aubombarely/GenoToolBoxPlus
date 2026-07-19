@@ -16,24 +16,31 @@ under --output/{species}_{accession}/:
     {species}_{accession}.gff3            (only if annotation exists)
     {species}_{accession}.equiv_seqID.txt (only with --rename_seqids)
 
-Sequence ID renaming scheme (--rename_seqids), inferred from each FASTA
-header's description text:
-    chromosome  -> {prefix}C{NN}   (number from the description; Arabic
-                                     digits used directly, Roman numerals
-                                     auto-converted when the genome uses
-                                     them, single-letter sex chromosomes
-                                     X/Y/W/Z kept literal e.g. {prefix}CX)
-    mitochondrion -> {prefix}MIT{NN}
-    chloroplast/plastid -> {prefix}PLT{NN}
-    scaffold    -> {prefix}SCF{NN}
-    (anything else, incl. unplaced/unlocalized contigs) -> {prefix}CTG{NN}
-Non-chromosome categories are numbered by order of appearance in the file.
-Zero-padding width is the width of the largest number in that category
-(minimum 2 digits).
+Sequence ID renaming scheme (--rename_seqids):
+    CHR (chromosome/pseudomolecule/linkage group/LG) -> {prefix}C{NN}
+        Number taken from the description as-is: Arabic digits used
+        directly, Roman numerals auto-converted when the genome uses them,
+        single-letter sex chromosomes X/Y/W/Z kept literal (e.g. {prefix}CX),
+        and letter-suffixed polyploid labels (e.g. "1A", "2B") kept literal
+        too since they aren't a plain number.
+    MIT (mitochondrion) -> {prefix}MIT{NN}
+    PLT (chloroplast/plastid) -> {prefix}PLT{NN}
+    SCF (not a chromosome/organelle, sequence contains any N) -> {prefix}SCF{NN}
+    CTG (not a chromosome/organelle, no N in the sequence) -> {prefix}CTG{NN}
+Non-chromosome categories are numbered by order of appearance in the file,
+not by any number in their own description. Zero-padding width is the width
+of the largest number in that category (minimum 2 digits).
+
+A FASTA scan (used for renaming and/or --report_metrics) also enforces that
+every SeqID is unique, raising a clear error otherwise, and flags any
+non-standard/ambiguous IUPAC nucleotide codes found (anything besides
+A/C/G/T/N) since those can break aligners or variant callers that assume a
+plain 4-letter(+N) alphabet.
 
 --report_metrics writes {output}/summary.tsv (one row per accession: seq_n,
-assembly_size, avg_length, n50, l50, n90, l90, annotation YES/NO) and prints
-the same as an ASCII table to stderr.
+assembly_size, avg_length, n50, l50, n90, l90, per-category counts
+CHR/SCF/CTG/MIT/PLT, ambiguous-nt count+characters, annotation YES/NO) and
+prints the same as an ASCII table to stderr.
 
 Usage
 -----
@@ -56,7 +63,7 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
-VERSION = "v0.2.0"
+VERSION = "v0.3.0"
 
 FASTA_LINE_WIDTH = 60
 DOWNLOAD_RETRIES = 3
@@ -76,10 +83,13 @@ ROMAN_VALUES = [
 ]
 SEX_CHROM_LETTERS = ("X", "Y", "W", "Z")
 
-CHROM_RE  = re.compile(r"chromosome[:\s]+([A-Za-z0-9]+)", re.IGNORECASE)
+CHROM_RE = re.compile(
+    r"(?:chromosome|pseudomolecule|linkage[\s_]?group)[:\s]+([A-Za-z0-9]+)",
+    re.IGNORECASE,
+)
+CHROM_LG_ABBR_RE = re.compile(r"\bLG[\s_-]?(\d+[A-Za-z]*)\b", re.IGNORECASE)
 MITO_RE   = re.compile(r"mitochondri", re.IGNORECASE)
 PLASTID_RE = re.compile(r"chloroplast|plastid", re.IGNORECASE)
-SCAFFOLD_RE = re.compile(r"scaffold", re.IGNORECASE)
 
 
 def _ssl_context_with_certifi_fallback():
@@ -212,45 +222,109 @@ def download_genome(accession: str, workdir: Path) -> tuple:
 
 # ── SeqID classification / renaming ───────────────────────────────────────
 
-def _parse_fasta_headers(fasta_path: Path) -> list:
-    """Returns list of (seq_id, description) in file order, streaming."""
-    headers = []
+IUPAC_AMBIGUITY_CODES = "RYSWKMBDHV"  # standard = A/C/G/T/N only; anything
+                                       # else (these + truly unexpected chars)
+                                       # can break aligners/callers expecting
+                                       # a plain 4-letter (+N) alphabet.
+
+
+def _scan_fasta(fasta_path: Path) -> list:
+    """Single streaming pass over the FASTA. Returns a list of dicts
+    (seq_id, description, length, has_n, ambig_count, ambig_chars) in file
+    order. Never holds a full sequence in memory — has_n is tracked
+    incrementally and stops checking once an N is seen, so this stays a
+    per-line scan even on long records. Raises ValueError if any seq_id is
+    duplicated (a data-integrity problem that would otherwise silently
+    corrupt classification/metrics/renaming, since results are keyed by
+    seq_id)."""
+    records = []
+    seq_id, description, length, has_n = None, "", 0, False
+    ambig_count, ambig_chars = 0, set()
+
+    def flush():
+        records.append({"seq_id": seq_id, "description": description,
+                        "length": length, "has_n": has_n,
+                        "ambig_count": ambig_count, "ambig_chars": ambig_chars})
+
     with open(fasta_path) as fh:
         for line in fh:
             if line.startswith(">"):
+                if seq_id is not None:
+                    flush()
                 header = line[1:].rstrip("\n")
                 parts = header.split(None, 1)
                 seq_id = parts[0]
                 description = parts[1] if len(parts) > 1 else ""
-                headers.append((seq_id, description))
-    return headers
+                length, has_n = 0, False
+                ambig_count, ambig_chars = 0, set()
+            else:
+                seq = line.rstrip("\n")
+                length += len(seq)
+                if not has_n and ("N" in seq or "n" in seq):
+                    has_n = True
+                seq_upper = seq.upper()
+                for c in IUPAC_AMBIGUITY_CODES:
+                    n = seq_upper.count(c)
+                    if n:
+                        ambig_count += n
+                        ambig_chars.add(c)
+    if seq_id is not None:
+        flush()
+
+    seen_ids = {}
+    duplicates = []
+    for r in records:
+        if r["seq_id"] in seen_ids:
+            duplicates.append(r["seq_id"])
+        seen_ids[r["seq_id"]] = True
+    if duplicates:
+        examples = ", ".join(sorted(set(duplicates))[:5])
+        raise ValueError(
+            f"{fasta_path.name} has {len(set(duplicates))} duplicate SeqID(s), "
+            f"e.g. {examples} — every sequence in a FASTA must have a unique ID"
+        )
+
+    return records
 
 
-def _classify(headers: list) -> dict:
-    """Classify each seq_id into a category + raw chromosome token (if any).
-    Returns {seq_id: (category, raw_token_or_None)}."""
+def _classify_description(description: str) -> tuple:
+    """Returns (category, raw_chrom_token_or_None) from description text alone
+    (chromosome/pseudomolecule/linkage group/mitochondrion/chloroplast).
+    Returns (None, None) when none of those match — caller resolves the
+    remaining SCF-vs-CTG split from actual sequence content (has_n)."""
+    m = CHROM_RE.search(description) or CHROM_LG_ABBR_RE.search(description)
+    if m:
+        return "CHR", m.group(1)
+    if MITO_RE.search(description):
+        return "MIT", None
+    if PLASTID_RE.search(description):
+        return "PLT", None
+    return None, None
+
+
+def classify_records(records: list) -> dict:
+    """Returns {seq_id: (category, raw_chrom_token_or_None)}, category one of
+    CHR/MIT/PLT/SCF/CTG. Non-chromosome/organelle sequences are SCF if they
+    contain any N (gap-containing, typical of scaffolds), else CTG."""
     classified = {}
-    for seq_id, description in headers:
-        m = CHROM_RE.search(description)
-        if m:
-            classified[seq_id] = ("C", m.group(1))
-        elif MITO_RE.search(description):
-            classified[seq_id] = ("MIT", None)
-        elif PLASTID_RE.search(description):
-            classified[seq_id] = ("PLT", None)
-        elif SCAFFOLD_RE.search(description):
-            classified[seq_id] = ("SCF", None)
-        else:
-            classified[seq_id] = ("CTG", None)
+    for r in records:
+        cat, tok = _classify_description(r["description"])
+        if cat is None:
+            cat = "SCF" if r["has_n"] else "CTG"
+        classified[r["seq_id"]] = (cat, tok)
     return classified
 
 
 def _resolve_chromosome_numbers(classified: dict) -> dict:
-    """For category C, resolve each raw token to (numeric_value_or_None, literal).
-    Detects genome-wide Roman-numeral usage before resolving ambiguous single
-    letters (X/Y/W/Z), since a lone "X" could be the sex chromosome or Roman
-    numeral 10 depending on how the rest of the genome is labeled."""
-    chrom_tokens = [tok for cat, tok in classified.values() if cat == "C"]
+    """For category CHR, resolve each raw token to (numeric_value_or_None,
+    literal). Detects genome-wide Roman-numeral usage before resolving
+    ambiguous single letters (X/Y/W/Z), since a lone "X" could be the sex
+    chromosome or Roman numeral 10 depending on how the rest of the genome
+    is labeled. Letter-suffixed polyploid labels (e.g. "1A", "2B", common in
+    wheat-like subgenomes) aren't digit-only, valid Roman numerals, or a
+    lone sex-chromosome letter, so they fall through and are kept literal —
+    exactly the "keep the original numbering" behavior wanted for those."""
+    chrom_tokens = [tok for cat, tok in classified.values() if cat == "CHR"]
     genome_is_roman = any(
         len(t) > 1 and ROMAN_RE.match(t.upper()) and not t.isdigit()
         for t in chrom_tokens
@@ -258,7 +332,7 @@ def _resolve_chromosome_numbers(classified: dict) -> dict:
 
     resolved = {}
     for seq_id, (cat, tok) in classified.items():
-        if cat != "C":
+        if cat != "CHR":
             continue
         if tok.isdigit():
             resolved[seq_id] = (int(tok), tok)
@@ -273,8 +347,8 @@ def _resolve_chromosome_numbers(classified: dict) -> dict:
 
 def build_rename_mapping(fasta_path: Path, prefix: str) -> dict:
     """Returns {old_seq_id: new_seq_id}, raising ValueError on a naming collision."""
-    headers = _parse_fasta_headers(fasta_path)
-    classified = _classify(headers)
+    records = _scan_fasta(fasta_path)
+    classified = classify_records(records)
     chrom_numbers = _resolve_chromosome_numbers(classified)
 
     max_chrom_val = max([v for v, _ in chrom_numbers.values() if v is not None], default=0)
@@ -288,9 +362,10 @@ def build_rename_mapping(fasta_path: Path, prefix: str) -> dict:
 
     mapping = {}
     counters = {"SCF": 0, "CTG": 0, "MIT": 0, "PLT": 0}
-    for seq_id, description in headers:
+    for r in records:
+        seq_id = r["seq_id"]
         cat, _ = classified[seq_id]
-        if cat == "C":
+        if cat == "CHR":
             value, literal = chrom_numbers[seq_id]
             suffix = f"{value:0{chrom_width}d}" if value is not None else literal
             new_id = f"{prefix}C{suffix}"
@@ -327,12 +402,11 @@ def write_renamed_fasta(fasta_path: Path, mapping: dict, out_path: Path,
                 out_fh.write(line)
 
 
-def write_equiv_tsv(mapping: dict, headers: list, out_path: Path) -> None:
-    order = [seq_id for seq_id, _ in headers]
+def write_equiv_tsv(mapping: dict, records: list, out_path: Path) -> None:
     with open(out_path, "w") as fh:
         fh.write("# old_seqid\tnew_seqid\n")
-        for seq_id in order:
-            fh.write(f"{seq_id}\t{mapping[seq_id]}\n")
+        for r in records:
+            fh.write(f"{r['seq_id']}\t{mapping[r['seq_id']]}\n")
 
 
 def write_renamed_gff3(gff_path: Path, mapping: dict, out_path: Path) -> None:
@@ -362,8 +436,9 @@ def write_renamed_gff3(gff_path: Path, mapping: dict, out_path: Path) -> None:
 
 # ── Assembly metrics (--report_metrics) ───────────────────────────────────
 
-METRIC_COLUMNS = ["species", "accession", "seq_n", "assembly_size",
-                  "avg_length", "n50", "l50", "n90", "l90", "annotation_gff"]
+METRIC_COLUMNS = ["species", "accession", "seq_n", "assembly_size", "avg_length",
+                  "n50", "l50", "n90", "l90", "n_chr", "n_scf", "n_ctg", "n_mit",
+                  "n_plt", "ambig_nt_count", "ambig_nt_chars", "annotation_gff"]
 
 
 def _nx_lx(lengths_desc: list, total: int, fraction: float) -> tuple:
@@ -378,29 +453,42 @@ def _nx_lx(lengths_desc: list, total: int, fraction: float) -> tuple:
 
 
 def compute_simple_metrics(fasta_path: Path) -> dict:
-    """Streams the FASTA counting only sequence lengths (never holds full
-    sequences in memory) and returns seq_n/assembly_size/avg_length/n50/l50/n90/l90."""
-    lengths = []
-    current_len = 0
-    with open(fasta_path) as fh:
-        for line in fh:
-            if line.startswith(">"):
-                if current_len:
-                    lengths.append(current_len)
-                current_len = 0
-            else:
-                current_len += len(line.rstrip("\n"))
-        if current_len:
-            lengths.append(current_len)
+    """Uses _scan_fasta (which also enforces unique SeqIDs) to compute
+    seq_n/assembly_size/avg_length/n50/l50/n90/l90, per-category counts
+    (CHR/SCF/CTG/MIT/PLT), and non-standard (ambiguous IUPAC) nt counts,
+    all in the same pass. Raises ValueError on duplicate SeqIDs."""
+    records = _scan_fasta(fasta_path)
 
-    if not lengths:
-        return {"seq_n": 0, "assembly_size": 0, "avg_length": 0,
-                "n50": 0, "l50": 0, "n90": 0, "l90": 0}
+    empty = {"seq_n": 0, "assembly_size": 0, "avg_length": 0, "n50": 0, "l50": 0,
+             "n90": 0, "l90": 0, "n_chr": 0, "n_scf": 0, "n_ctg": 0, "n_mit": 0,
+             "n_plt": 0, "ambig_nt_count": 0, "ambig_nt_chars": ""}
+    if not records:
+        return empty
 
+    lengths = [r["length"] for r in records]
     lengths_desc = sorted(lengths, reverse=True)
     total = sum(lengths)
     n50, l50 = _nx_lx(lengths_desc, total, 0.50)
     n90, l90 = _nx_lx(lengths_desc, total, 0.90)
+
+    classified = classify_records(records)
+    cat_counts = {"CHR": 0, "SCF": 0, "CTG": 0, "MIT": 0, "PLT": 0}
+    for cat, _ in classified.values():
+        cat_counts[cat] += 1
+
+    # A FASTA with no header descriptions at all (e.g. a previously
+    # --strip_description'd output being re-scanned on a skip-existing run)
+    # can't be classified into CHR/MIT/PLT from text — everything falls to
+    # SCF/CTG purely by N-content, which would silently misreport those counts.
+    if all(not r["description"] for r in records) and not (cat_counts["CHR"]
+            or cat_counts["MIT"] or cat_counts["PLT"]):
+        print(f"  WARNING: {fasta_path.name} has no header descriptions (likely "
+              f"already renamed with --strip_description) — CHR/MIT/PLT counts "
+              f"can't be recovered from this file; use --force to recompute "
+              f"from a fresh download", file=sys.stderr)
+
+    ambig_count = sum(r["ambig_count"] for r in records)
+    ambig_chars = sorted(set().union(*(r["ambig_chars"] for r in records)))
 
     return {
         "seq_n": len(lengths),
@@ -408,6 +496,10 @@ def compute_simple_metrics(fasta_path: Path) -> dict:
         "avg_length": round(total / len(lengths), 2),
         "n50": n50, "l50": l50,
         "n90": n90, "l90": l90,
+        "n_chr": cat_counts["CHR"], "n_scf": cat_counts["SCF"],
+        "n_ctg": cat_counts["CTG"], "n_mit": cat_counts["MIT"], "n_plt": cat_counts["PLT"],
+        "ambig_nt_count": ambig_count,
+        "ambig_nt_chars": ",".join(ambig_chars),
     }
 
 
@@ -442,7 +534,8 @@ def print_metrics_report(rows: list) -> None:
     print("", file=sys.stderr)
     print("Assembly metrics summary:", file=sys.stderr)
     headers = ["Species", "Accession", "Seq_N", "Assembly_size", "Avg_length",
-              "N50", "L50", "N90", "L90", "Annotation (GFF)"]
+              "N50", "L50", "N90", "L90", "CHR", "SCF", "CTG", "MIT", "PLT",
+              "Ambig_NT", "Ambig_chars", "Annotation (GFF)"]
     table_rows = [[str(row[c]) for c in METRIC_COLUMNS] for row in rows]
     for line in _ascii_table(headers, table_rows):
         print(line, file=sys.stderr)
@@ -450,9 +543,16 @@ def print_metrics_report(rows: list) -> None:
 
 # ── Main per-accession pipeline ───────────────────────────────────────────
 
-def _metrics_row(species: str, accession: str, fasta_out: Path, gff_out: Path) -> dict:
+def _metrics_row(species: str, accession: str, fasta_out: Path, gff_out: Path):
+    """Returns a metrics dict, or None (with an error printed) if fasta_out
+    fails the duplicate-SeqID sanity check."""
+    try:
+        metrics = compute_simple_metrics(fasta_out)
+    except ValueError as e:
+        print(f"  ERROR: {e}", file=sys.stderr)
+        return None
     row = {"species": species, "accession": accession}
-    row.update(compute_simple_metrics(fasta_out))
+    row.update(metrics)
     row["annotation_gff"] = "YES" if gff_out.exists() and gff_out.stat().st_size > 0 else "NO"
     return row
 
@@ -487,9 +587,9 @@ def process_accession(row: dict, output_dir: Path, rename_seqids: bool, force: b
             except ValueError as e:
                 print(f"  ERROR: {e}", file=sys.stderr)
                 return False, None
-            headers = _parse_fasta_headers(fasta_src)
+            records = _scan_fasta(fasta_src)
             write_renamed_fasta(fasta_src, mapping, fasta_out, strip_description)
-            write_equiv_tsv(mapping, headers, equiv_out)
+            write_equiv_tsv(mapping, records, equiv_out)
             print(f"  Written: {fasta_out.name}, {equiv_out.name} "
                   f"({len(mapping)} sequences renamed)", file=sys.stderr)
             if gff_src is not None:
@@ -502,7 +602,12 @@ def process_accession(row: dict, output_dir: Path, rename_seqids: bool, force: b
                 shutil.copy(gff_src, gff_out)
                 print(f"  Written: {gff_out.name}", file=sys.stderr)
 
-    metrics = _metrics_row(species, accession, fasta_out, gff_out) if report_metrics else None
+        # Classify/measure from fasta_src (pre-rename, always has full header
+        # descriptions) rather than fasta_out, so --strip_description can't
+        # blind CHR/MIT/PLT classification on a fresh download — only the
+        # skip-existing path (no fasta_src available) falls back to fasta_out.
+        metrics = _metrics_row(species, accession, fasta_src, gff_out) if report_metrics else None
+
     return True, metrics
 
 
@@ -529,8 +634,9 @@ def main(argv=None):
                          "(requires --rename_seqids), leaving just '>{new_id}'")
     ap.add_argument("--report_metrics", action="store_true",
                     help="Compute simple assembly metrics (seq_n, assembly_size, "
-                         "avg_length, N50/L50, N90/L90, GFF annotation YES/NO) for "
-                         "each processed accession; writes {output}/summary.tsv and "
+                         "avg_length, N50/L50, N90/L90, CHR/SCF/CTG/MIT/PLT counts, "
+                         "ambiguous-nt count, GFF annotation YES/NO) for each "
+                         "processed accession; writes {output}/summary.tsv and "
                          "prints the same as an ASCII table")
     ap.add_argument("--force", action="store_true",
                     help="Re-download and re-process even if output already exists")
