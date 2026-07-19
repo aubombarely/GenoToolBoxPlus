@@ -31,11 +31,16 @@ Non-chromosome categories are numbered by order of appearance in the file.
 Zero-padding width is the width of the largest number in that category
 (minimum 2 digits).
 
+--report_metrics writes {output}/summary.tsv (one row per accession: seq_n,
+assembly_size, avg_length, n50, l50, n90, l90, annotation YES/NO) and prints
+the same as an ASCII table to stderr.
+
 Usage
 -----
     NCBI_DownloadGenome.py --accessions accessions.txt --output genomes/
     NCBI_DownloadGenome.py --accessions accessions.txt --output genomes/ \\
         --rename_seqids --rename_prefix Sp
+    NCBI_DownloadGenome.py --accessions accessions.txt --output genomes/ --report_metrics
 """
 
 import argparse
@@ -51,7 +56,7 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
-VERSION = "v0.1.0"
+VERSION = "v0.2.0"
 
 FASTA_LINE_WIDTH = 60
 DOWNLOAD_RETRIES = 3
@@ -355,10 +360,106 @@ def write_renamed_gff3(gff_path: Path, mapping: dict, out_path: Path) -> None:
                     out_fh.write(line)
 
 
+# ── Assembly metrics (--report_metrics) ───────────────────────────────────
+
+METRIC_COLUMNS = ["species", "accession", "seq_n", "assembly_size",
+                  "avg_length", "n50", "l50", "n90", "l90", "annotation_gff"]
+
+
+def _nx_lx(lengths_desc: list, total: int, fraction: float) -> tuple:
+    """Return (Nx, Lx) for a given fraction (0-1). lengths_desc sorted descending."""
+    target = total * fraction
+    cumsum = 0
+    for i, length in enumerate(lengths_desc, 1):
+        cumsum += length
+        if cumsum >= target:
+            return length, i
+    return lengths_desc[-1], len(lengths_desc)
+
+
+def compute_simple_metrics(fasta_path: Path) -> dict:
+    """Streams the FASTA counting only sequence lengths (never holds full
+    sequences in memory) and returns seq_n/assembly_size/avg_length/n50/l50/n90/l90."""
+    lengths = []
+    current_len = 0
+    with open(fasta_path) as fh:
+        for line in fh:
+            if line.startswith(">"):
+                if current_len:
+                    lengths.append(current_len)
+                current_len = 0
+            else:
+                current_len += len(line.rstrip("\n"))
+        if current_len:
+            lengths.append(current_len)
+
+    if not lengths:
+        return {"seq_n": 0, "assembly_size": 0, "avg_length": 0,
+                "n50": 0, "l50": 0, "n90": 0, "l90": 0}
+
+    lengths_desc = sorted(lengths, reverse=True)
+    total = sum(lengths)
+    n50, l50 = _nx_lx(lengths_desc, total, 0.50)
+    n90, l90 = _nx_lx(lengths_desc, total, 0.90)
+
+    return {
+        "seq_n": len(lengths),
+        "assembly_size": total,
+        "avg_length": round(total / len(lengths), 2),
+        "n50": n50, "l50": l50,
+        "n90": n90, "l90": l90,
+    }
+
+
+def _ascii_table(headers: list, rows: list) -> list:
+    """Return list of strings forming an ASCII box table."""
+    widths = [max(len(h), *(len(r[i]) for r in rows)) if rows else len(h)
+              for i, h in enumerate(headers)]
+    sep = "+" + "+".join("-" * (w + 2) for w in widths) + "+"
+
+    def fmt_row(cells):
+        parts = []
+        for i, cell in enumerate(cells):
+            padded = cell.ljust(widths[i]) if i == 0 else cell.rjust(widths[i])
+            parts.append(f" {padded} ")
+        return "|" + "|".join(parts) + "|"
+
+    lines = [sep, fmt_row(headers), sep]
+    for r in rows:
+        lines.append(fmt_row(r))
+    lines.append(sep)
+    return lines
+
+
+def write_metrics_tsv(rows: list, path: Path) -> None:
+    with open(path, "w") as fh:
+        fh.write("\t".join(METRIC_COLUMNS) + "\n")
+        for row in rows:
+            fh.write("\t".join(str(row[c]) for c in METRIC_COLUMNS) + "\n")
+
+
+def print_metrics_report(rows: list) -> None:
+    print("", file=sys.stderr)
+    print("Assembly metrics summary:", file=sys.stderr)
+    headers = ["Species", "Accession", "Seq_N", "Assembly_size", "Avg_length",
+              "N50", "L50", "N90", "L90", "Annotation (GFF)"]
+    table_rows = [[str(row[c]) for c in METRIC_COLUMNS] for row in rows]
+    for line in _ascii_table(headers, table_rows):
+        print(line, file=sys.stderr)
+
+
 # ── Main per-accession pipeline ───────────────────────────────────────────
 
+def _metrics_row(species: str, accession: str, fasta_out: Path, gff_out: Path) -> dict:
+    row = {"species": species, "accession": accession}
+    row.update(compute_simple_metrics(fasta_out))
+    row["annotation_gff"] = "YES" if gff_out.exists() and gff_out.stat().st_size > 0 else "NO"
+    return row
+
+
 def process_accession(row: dict, output_dir: Path, rename_seqids: bool, force: bool,
-                      strip_description: bool = False) -> bool:
+                      strip_description: bool = False, report_metrics: bool = False) -> tuple:
+    """Returns (ok: bool, metrics_row: dict | None)."""
     species, accession, prefix = row["species"], row["accession"], row["prefix"]
     acc_dir = output_dir / f"{species}_{accession}"
     fasta_out = acc_dir / f"{species}_{accession}.fasta"
@@ -368,7 +469,8 @@ def process_accession(row: dict, output_dir: Path, rename_seqids: bool, force: b
     if not force and fasta_out.exists() and fasta_out.stat().st_size > 0:
         print(f"[{species} / {accession}] already downloaded, skipping (use --force to redo)",
               file=sys.stderr)
-        return True
+        metrics = _metrics_row(species, accession, fasta_out, gff_out) if report_metrics else None
+        return True, metrics
 
     print(f"[{species} / {accession}] downloading...", file=sys.stderr)
     acc_dir.mkdir(parents=True, exist_ok=True)
@@ -377,14 +479,14 @@ def process_accession(row: dict, output_dir: Path, rename_seqids: bool, force: b
         tmp_path = Path(tmp)
         fasta_src, gff_src = download_genome(accession, tmp_path)
         if fasta_src is None:
-            return False
+            return False, None
 
         if rename_seqids:
             try:
                 mapping = build_rename_mapping(fasta_src, prefix)
             except ValueError as e:
                 print(f"  ERROR: {e}", file=sys.stderr)
-                return False
+                return False, None
             headers = _parse_fasta_headers(fasta_src)
             write_renamed_fasta(fasta_src, mapping, fasta_out, strip_description)
             write_equiv_tsv(mapping, headers, equiv_out)
@@ -400,7 +502,8 @@ def process_accession(row: dict, output_dir: Path, rename_seqids: bool, force: b
                 shutil.copy(gff_src, gff_out)
                 print(f"  Written: {gff_out.name}", file=sys.stderr)
 
-    return True
+    metrics = _metrics_row(species, accession, fasta_out, gff_out) if report_metrics else None
+    return True, metrics
 
 
 def main(argv=None):
@@ -424,6 +527,11 @@ def main(argv=None):
     ap.add_argument("--strip_description", action="store_true",
                     help="Drop the FASTA header description text when renaming "
                          "(requires --rename_seqids), leaving just '>{new_id}'")
+    ap.add_argument("--report_metrics", action="store_true",
+                    help="Compute simple assembly metrics (seq_n, assembly_size, "
+                         "avg_length, N50/L50, N90/L90, GFF annotation YES/NO) for "
+                         "each processed accession; writes {output}/summary.tsv and "
+                         "prints the same as an ASCII table")
     ap.add_argument("--force", action="store_true",
                     help="Re-download and re-process even if output already exists")
     ap.add_argument("--dry_run", action="store_true",
@@ -456,15 +564,25 @@ def main(argv=None):
     args.output.mkdir(parents=True, exist_ok=True)
 
     n_ok, n_fail = 0, 0
+    metrics_rows = []
     for row in rows:
-        ok = process_accession(row, args.output, args.rename_seqids, args.force,
-                              args.strip_description)
+        ok, metrics = process_accession(row, args.output, args.rename_seqids, args.force,
+                                        args.strip_description, args.report_metrics)
         if ok:
             n_ok += 1
+            if metrics is not None:
+                metrics_rows.append(metrics)
         else:
             n_fail += 1
 
     print(f"Done: {n_ok} succeeded, {n_fail} failed (of {len(rows)} accessions)", file=sys.stderr)
+
+    if args.report_metrics and metrics_rows:
+        summary_path = args.output / "summary.tsv"
+        write_metrics_tsv(metrics_rows, summary_path)
+        print(f"Written: {summary_path}", file=sys.stderr)
+        print_metrics_report(metrics_rows)
+
     if n_fail:
         sys.exit(1)
 

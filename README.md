@@ -137,6 +137,7 @@ NCBI_DownloadGenome.py --accessions accessions.txt --output genomes/
 NCBI_DownloadGenome.py --accessions accessions.txt --output genomes/ --rename_seqids
 NCBI_DownloadGenome.py --accessions accessions.txt --output genomes/ --rename_seqids --strip_description
 NCBI_DownloadGenome.py --accessions accessions.txt --output genomes/ --dry_run
+NCBI_DownloadGenome.py --accessions accessions.txt --output genomes/ --rename_seqids --report_metrics
 ```
 
 **Arguments**
@@ -148,6 +149,7 @@ NCBI_DownloadGenome.py --accessions accessions.txt --output genomes/ --dry_run
 | `--rename_seqids` | No | Rename sequence IDs (see scheme below) and apply the same renaming to the GFF3, if one was downloaded |
 | `--rename_prefix` | No | Default prefix for renamed sequence IDs when not set in the accessions file (default: `Sp`) |
 | `--strip_description` | No | Drop the FASTA header description text when renaming (requires `--rename_seqids`), leaving just `>{new_id}` |
+| `--report_metrics` | No | Compute simple assembly metrics for each processed accession; writes `{output}/summary.tsv` and prints an ASCII table (see below) |
 | `--force` | No | Re-download and re-process even if output already exists |
 | `--dry_run` | No | Validate the accessions file and print what would be downloaded, then exit without any network calls |
 | `--version` | No | Show version and exit |
@@ -167,10 +169,12 @@ falls back to `--rename_prefix`.
 **Output layout**
 
 ```
-{output}/{species}_{accession}/
-├── {species}_{accession}.fasta
-├── {species}_{accession}.gff3             (only if annotation exists)
-└── {species}_{accession}.equiv_seqID.txt  (only with --rename_seqids)
+{output}/
+├── {species}_{accession}/
+│   ├── {species}_{accession}.fasta
+│   ├── {species}_{accession}.gff3             (only if annotation exists)
+│   └── {species}_{accession}.equiv_seqID.txt  (only with --rename_seqids)
+└── summary.tsv                                (only with --report_metrics)
 ```
 
 **SeqID renaming scheme (`--rename_seqids`)**
@@ -194,6 +198,25 @@ Roman-numbered, in which case a lone `X` is treated as Roman numeral 10.
 Zero-padding width is the width of the largest number in that category
 (minimum 2 digits); non-chromosome categories are numbered by order of
 appearance in the file, not by any number in their own description.
+
+**Assembly metrics (`--report_metrics`)**
+
+For each processed accession (whether just downloaded or already present
+from a previous run): `seq_n`, `assembly_size`, `avg_length`, `n50`, `l50`,
+`n90`, `l90`, and `annotation_gff` (`YES`/`NO`, whether a GFF3 was
+downloaded). Written as `{output}/summary.tsv` (one row per accession) and
+printed as an ASCII table to stderr, e.g.:
+
+```
++--------------------------+-----------------+-------+---------------+------------+--------+-----+--------+-----+------------------+
+| Species                  |       Accession | Seq_N | Assembly_size | Avg_length |    N50 | L50 |    N90 | L90 | Annotation (GFF) |
++--------------------------+-----------------+-------+---------------+------------+--------+-----+--------+-----+------------------+
+| Saccharomyces_cerevisiae | GCF_000146045.2 |    17 |      12157105 |  715123.82 | 924431 |   6 | 439888 |  13 |              YES |
++--------------------------+-----------------+-------+---------------+------------+--------+-----+--------+-----+------------------+
+```
+
+Metrics are computed from the FASTA actually written to `--output` (i.e.
+the renamed version if `--rename_seqids` was used).
 
 **Notes**
 - Downloads via the [NCBI Datasets REST API v2](https://www.ncbi.nlm.nih.gov/datasets/docs/v2/reference-docs/rest-api/) directly (`urllib`/`zipfile`, both standard library) — no `datasets` CLI tool required.
