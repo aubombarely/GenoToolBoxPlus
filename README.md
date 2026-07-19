@@ -135,6 +135,7 @@ accessions, with optional systematic sequence ID renaming.
 ```bash
 NCBI_DownloadGenome.py --accessions accessions.txt --output genomes/
 NCBI_DownloadGenome.py --accessions accessions.txt --output genomes/ --rename_seqids
+NCBI_DownloadGenome.py --accessions accessions.txt --output genomes/ --rename_seqids --strip_description
 NCBI_DownloadGenome.py --accessions accessions.txt --output genomes/ --dry_run
 ```
 
@@ -146,6 +147,7 @@ NCBI_DownloadGenome.py --accessions accessions.txt --output genomes/ --dry_run
 | `--output` | Yes | Output directory (one subdirectory per accession) |
 | `--rename_seqids` | No | Rename sequence IDs (see scheme below) and apply the same renaming to the GFF3, if one was downloaded |
 | `--rename_prefix` | No | Default prefix for renamed sequence IDs when not set in the accessions file (default: `Sp`) |
+| `--strip_description` | No | Drop the FASTA header description text when renaming (requires `--rename_seqids`), leaving just `>{new_id}` |
 | `--force` | No | Re-download and re-process even if output already exists |
 | `--dry_run` | No | Validate the accessions file and print what would be downloaded, then exit without any network calls |
 | `--version` | No | Show version and exit |

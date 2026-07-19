@@ -51,7 +51,7 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
-VERSION = "v0.0.1"
+VERSION = "v0.1.0"
 
 FASTA_LINE_WIDTH = 60
 DOWNLOAD_RETRIES = 3
@@ -305,14 +305,18 @@ def build_rename_mapping(fasta_path: Path, prefix: str) -> dict:
     return mapping
 
 
-def write_renamed_fasta(fasta_path: Path, mapping: dict, out_path: Path) -> None:
+def write_renamed_fasta(fasta_path: Path, mapping: dict, out_path: Path,
+                        strip_description: bool = False) -> None:
     with open(fasta_path) as in_fh, open(out_path, "w") as out_fh:
         for line in in_fh:
             if line.startswith(">"):
                 header = line[1:].rstrip("\n")
                 parts = header.split(None, 1)
                 seq_id = parts[0]
-                description = (" " + parts[1]) if len(parts) > 1 else ""
+                if strip_description:
+                    description = ""
+                else:
+                    description = (" " + parts[1]) if len(parts) > 1 else ""
                 out_fh.write(f">{mapping.get(seq_id, seq_id)}{description}\n")
             else:
                 out_fh.write(line)
@@ -353,7 +357,8 @@ def write_renamed_gff3(gff_path: Path, mapping: dict, out_path: Path) -> None:
 
 # ── Main per-accession pipeline ───────────────────────────────────────────
 
-def process_accession(row: dict, output_dir: Path, rename_seqids: bool, force: bool) -> bool:
+def process_accession(row: dict, output_dir: Path, rename_seqids: bool, force: bool,
+                      strip_description: bool = False) -> bool:
     species, accession, prefix = row["species"], row["accession"], row["prefix"]
     acc_dir = output_dir / f"{species}_{accession}"
     fasta_out = acc_dir / f"{species}_{accession}.fasta"
@@ -381,7 +386,7 @@ def process_accession(row: dict, output_dir: Path, rename_seqids: bool, force: b
                 print(f"  ERROR: {e}", file=sys.stderr)
                 return False
             headers = _parse_fasta_headers(fasta_src)
-            write_renamed_fasta(fasta_src, mapping, fasta_out)
+            write_renamed_fasta(fasta_src, mapping, fasta_out, strip_description)
             write_equiv_tsv(mapping, headers, equiv_out)
             print(f"  Written: {fasta_out.name}, {equiv_out.name} "
                   f"({len(mapping)} sequences renamed)", file=sys.stderr)
@@ -416,6 +421,9 @@ def main(argv=None):
     ap.add_argument("--rename_prefix", default="Sp",
                     help="Default prefix for renamed sequence IDs when not set in the "
                          "accessions file (default: Sp)")
+    ap.add_argument("--strip_description", action="store_true",
+                    help="Drop the FASTA header description text when renaming "
+                         "(requires --rename_seqids), leaving just '>{new_id}'")
     ap.add_argument("--force", action="store_true",
                     help="Re-download and re-process even if output already exists")
     ap.add_argument("--dry_run", action="store_true",
@@ -427,6 +435,10 @@ def main(argv=None):
     if not args.accessions.exists():
         print(f"ERROR: --accessions file not found: {args.accessions}", file=sys.stderr)
         sys.exit(1)
+
+    if args.strip_description and not args.rename_seqids:
+        print("WARNING: --strip_description has no effect without --rename_seqids "
+              "(FASTA is copied through unmodified otherwise)", file=sys.stderr)
 
     rows = load_accessions(args.accessions, args.rename_prefix)
     if not rows:
@@ -445,7 +457,8 @@ def main(argv=None):
 
     n_ok, n_fail = 0, 0
     for row in rows:
-        ok = process_accession(row, args.output, args.rename_seqids, args.force)
+        ok = process_accession(row, args.output, args.rename_seqids, args.force,
+                              args.strip_description)
         if ok:
             n_ok += 1
         else:
