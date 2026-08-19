@@ -8,6 +8,7 @@ A collection of general-purpose command-line scripts for genomics and genome ann
 - [FastaStats.py](#fastastatspy) — Compute per-assembly and nucleotide-composition statistics for a FASTA file
 - [GFA2FASTA.py](#gfa2fastapy) — Convert GFA (v1 or v2) assembly graph segments to FASTA
 - [NCBI_DownloadGenome.py](#ncbi_downloadgenomepy) — Download genome FASTA/GFF3 from NCBI with optional SeqID renaming
+- [GetFasta4EarlGreyGFF.py](#getfasta4earlgreygffpy) — Extract FASTA sequences for TE features from an EarlGrey GFF3
 
 ## Requirements
 
@@ -251,3 +252,55 @@ to recompute from a fresh download in that case.
   bundle if it happens to be installed, and otherwise prints the exact fix
   (`Install Certificates.command`, or `pip install certifi`).
 - Stats (sequences renamed, files written) are printed to stderr.
+
+### GetFasta4EarlGreyGFF.py
+
+Extract FASTA sequences for TE features from an
+[EarlGrey](https://github.com/TobyBaril/EarlGrey) repeat-annotation GFF3,
+where column 3 is the TE type (e.g. `LINE/L1`, `LTR/Copia`) and the
+attributes carry an `ID=` (the repeat family ID, e.g. `RND-1_FAMILY-789`).
+
+**Usage**
+
+```bash
+GetFasta4EarlGreyGFF.py --fasta genome.fasta --gff repeats.gff3
+GetFasta4EarlGreyGFF.py --fasta genome.fasta --gff repeats.gff3 --output TEs.fasta
+```
+
+**Arguments**
+
+| Argument | Required | Description |
+|----------|----------|-------------|
+| `--fasta` | Yes | Input genome FASTA |
+| `--gff` | Yes | EarlGrey GFF3 (column 3 = TE type; `ID=` attribute = family ID) |
+| `--output` | No | Output FASTA file (default: stdout) |
+| `--version` | No | Show version and exit |
+| `--help` | No | Show help and exit |
+
+**Header format**
+
+```
+>{ID}_{TYPE}_{SeqID}_{Start}
+```
+
+`TYPE` has every `/` replaced with `_` (e.g. `LTR/Copia` → `LTR_Copia`) so
+the header stays shell- and tool-safe. Example — this GFF3 line:
+
+```
+PhangAGP1C01  Earl_Grey  LINE/L1  1  2101  10800  +  .  TSTART=5686;TEND=7874;ID=RND-1_FAMILY-789;SHORTTE=F;KIMURA80=0.2841
+```
+
+produces:
+
+```
+>RND-1_FAMILY-789_LINE_L1_PhangAGP1C01_1
+```
+
+**Notes**
+- Strand-aware: `-` strand features are reverse-complemented; `+`/`.`/unset are extracted forward.
+- Extraction streams the genome FASTA sequence-by-sequence (peak memory = one chromosome), never loading the whole genome at once.
+- Features with no `ID=` attribute fall back to `{seqid}_{start}_{end}` as the ID, with a warning.
+- Features whose coordinates fall outside their sequence's length are skipped with a warning (not silently dropped or truncated).
+- GFF3 seqids with no match in the genome FASTA are reported once as a count, not per-feature.
+- Output sequences are wrapped at 60 characters per line.
+- Extraction stats (extracted/skipped counts) are printed to stderr.
