@@ -212,22 +212,41 @@ def validate_gff(features: list, classified: dict) -> tuple:
     subfeatures  = classified["subfeatures"]
     by_id        = classified["by_id"]
 
-    # 1. Duplicate IDs anywhere in the file
+    # 1. Duplicate IDs anywhere in the file. A single ID legitimately spans
+    #    multiple lines when it's a discontinuous feature split across
+    #    several segments (classically a CDS split across exons, common
+    #    in NCBI-style output such as EGAPx) -- standard GFF3 convention,
+    #    not corruption. That's only true if every line sharing the ID
+    #    agrees on seqid/strand/type/Parent (i.e. they really are pieces
+    #    of the same feature); anything else is a genuine collision.
     id_seen: dict = {}
     for f in features:
         if f["old_id"]:
             id_seen.setdefault(f["old_id"], []).append(f)
     dup_examples = []
     n_dup = 0
+    n_multiseg = 0
     for old_id, flist in id_seen.items():
-        if len(flist) > 1:
-            n_dup += 1
-            if len(dup_examples) < 5:
-                lines = ",".join(str(x["lineno"]) for x in flist)
-                dup_examples.append(f"'{old_id}' on lines {lines}")
+        if len(flist) <= 1:
+            continue
+        sig = {(f["seqid"], f["strand"], f["ftype"], tuple(sorted(f["old_parents"])))
+              for f in flist}
+        if len(sig) == 1:
+            n_multiseg += 1
+            continue
+        n_dup += 1
+        if len(dup_examples) < 5:
+            lines = ",".join(str(x["lineno"]) for x in flist)
+            dup_examples.append(f"'{old_id}' on lines {lines}")
     if n_dup:
-        errors.append(f"{n_dup} ID(s) used on more than one line, e.g.: "
-                      + "; ".join(dup_examples))
+        errors.append(f"{n_dup} ID(s) reused across lines with inconsistent "
+                      f"seqid/strand/type/Parent (not a valid multi-segment "
+                      f"feature), e.g.: " + "; ".join(dup_examples))
+    if n_multiseg:
+        warnings.append(f"{n_multiseg} ID(s) legitimately span multiple lines "
+                        f"(a discontinuous feature, e.g. a CDS split across "
+                        f"several exons) -- each will be renamed as one "
+                        f"logical feature sharing a single new ID")
 
     # 2. Genes/transcripts missing an ID (subfeatures may lack one --
     #    handled via the OldFeatID seqid:start-end fallback)
@@ -413,8 +432,16 @@ def rename_features(classified: dict, gene_type: str,
 
     n_other_type = 0
     n_sub_no_id  = 0
+    n_multiseg_groups = 0
     for t in transcripts:
         s_list = sub_by_transcript.get(t["old_id"], [])
+        # groups: suffix -> { group_key -> [line, ...] }. group_key is the
+        # old_id when present, so every line of a discontinuous feature
+        # (e.g. a CDS split across several exons, sharing one ID) is
+        # numbered and renamed as a single logical unit -- not one new ID
+        # per physical line, which would otherwise destroy the "these
+        # segments are one CDS" relationship. Features with no ID (or a
+        # unique one) fall into their own singleton group, same as before.
         groups: dict = {}
         for s in s_list:
             ftype_lc = s["ftype"].lower()
@@ -425,18 +452,24 @@ def rename_features(classified: dict, gene_type: str,
             else:
                 suffix = s["ftype"].upper()[:3]
                 n_other_type += 1
-            groups.setdefault(suffix, []).append(s)
+            group_key = s["old_id"] if s["old_id"] else id(s)
+            groups.setdefault(suffix, {}).setdefault(group_key, []).append(s)
 
         reverse = (t["strand"] == "-")
-        for suffix, group in groups.items():
-            ordered = sorted(group, key=lambda s: s["start"], reverse=reverse)
-            for i, s in enumerate(ordered, start=1):
+        for suffix, key_groups in groups.items():
+            ordered = sorted(key_groups.values(),
+                             key=lambda lines: min(s["start"] for s in lines),
+                             reverse=reverse)
+            for i, lines in enumerate(ordered, start=1):
+                if len(lines) > 1:
+                    n_multiseg_groups += 1
                 new_id = f"{t['new_id']}{suffix}{i:0{feature_pad}d}"
-                s["new_id"] = new_id
-                if s["old_id"]:
-                    id_map[s["old_id"]] = new_id
-                else:
-                    n_sub_no_id += 1
+                for s in lines:
+                    s["new_id"] = new_id
+                    if s["old_id"]:
+                        id_map[s["old_id"]] = new_id
+                    else:
+                        n_sub_no_id += 1
 
     # ── Rewrite attributes ──────────────────────────────────────────────────
     n_unresolved_parent = 0
@@ -473,6 +506,7 @@ def rename_features(classified: dict, gene_type: str,
         "n_other_type": n_other_type,
         "n_unresolved_parent": n_unresolved_parent,
         "n_seqids": len(genes_by_seq),
+        "n_multiseg_groups": n_multiseg_groups,
     }
     return stats
 
@@ -694,6 +728,11 @@ def main(argv=None):
     if stats["n_sub_no_id"]:
         print(f"WARNING: {stats['n_sub_no_id']} exon/CDS/UTR feature(s) had "
               f"no original ID", file=sys.stderr)
+    if stats["n_multiseg_groups"]:
+        print(f"  {stats['n_multiseg_groups']} discontinuous feature(s) "
+              f"(same ID split across multiple lines, e.g. a multi-exon "
+              f"CDS) renamed as a single logical feature sharing one ID",
+              file=sys.stderr)
     if stats["n_other_type"]:
         print(f"WARNING: {stats['n_other_type']} subfeature(s) had a type "
               f"other than exon/CDS/UTR; suffixed with the first 3 letters "
