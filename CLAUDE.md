@@ -20,6 +20,7 @@ Apply those standards to any new scripts added here.
 | `scripts/GFA2FASTA.py` | Convert GFA assembly graph format to FASTA |
 | `scripts/NCBI_DownloadGenome.py` | Download genome FASTA/GFF3 from NCBI (accessions.txt, same format as annotseba), optional SeqID renaming |
 | `scripts/GetFasta4EarlGreyGFF.py` | Extract FASTA sequences for TE features from an EarlGrey repeat-annotation GFF3, strand-aware, sanitized headers |
+| `scripts/GFF3RenameGenes.py` | Systematically rename gene/transcript/exon/CDS/UTR IDs in a GFF3 using a fixed SeqID-based numbering scheme, preserving old IDs as OldFeatID= |
 
 ## Design principles for this collection
 

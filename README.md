@@ -9,6 +9,7 @@ A collection of general-purpose command-line scripts for genomics and genome ann
 - [GFA2FASTA.py](#gfa2fastapy) — Convert GFA (v1 or v2) assembly graph segments to FASTA
 - [NCBI_DownloadGenome.py](#ncbi_downloadgenomepy) — Download genome FASTA/GFF3 from NCBI with optional SeqID renaming
 - [GetFasta4EarlGreyGFF.py](#getfasta4earlgreygffpy) — Extract FASTA sequences for TE features from an EarlGrey GFF3
+- [GFF3RenameGenes.py](#gff3renamegenespy) — Systematically rename gene models in a GFF3 file
 
 ## Requirements
 
@@ -304,3 +305,88 @@ produces:
 - GFF3 seqids with no match in the genome FASTA are reported once as a count, not per-feature.
 - Output sequences are wrapped at 60 characters per line.
 - Extraction stats (extracted/skipped counts) are printed to stderr.
+
+### GFF3RenameGenes.py
+
+Systematically rename every gene, transcript, exon, CDS, and UTR ID in a
+GFF3 file using a fixed, predictable scheme built from the sequence ID.
+
+**Usage**
+
+```bash
+GFF3RenameGenes.py --gff annotation.gff3
+GFF3RenameGenes.py --gff annotation.gff3 --output renamed.gff3
+GFF3RenameGenes.py --gff annotation.gff3 --check_only
+GFF3RenameGenes.py --gff annotation.gff3 --dry_run
+```
+
+**Arguments**
+
+| Argument | Required | Description |
+|----------|----------|-------------|
+| `--gff` | Yes | Input GFF3 file |
+| `--output` | No | Output GFF3 file (default: stdout) |
+| `--gene_type` | No | Column-3 feature type treated as a gene (default: `gene`) |
+| `--gene_pad` | No | Zero-padding width for gene numbers (default: 6) |
+| `--gene_step` | No | Increment between consecutive gene numbers (default: 10) |
+| `--gene_start` | No | First gene number on each SeqID (default: 10) |
+| `--transcript_pad` | No | Zero-padding width for transcript numbers (default: 2) |
+| `--feature_pad` | No | Zero-padding width for exon/CDS/UTR numbers (default: 2) |
+| `--prefix_geneid` | No | Replace the literal SeqID with this fixed prefix in every gene ID (default: use each feature's own SeqID); switches gene numbering to one continuous count across the whole file, since the prefix is then no longer unique per SeqID |
+| `--after_seqid_tag` | No | Insert this tag between the SeqID (or `--prefix_geneid`) and the `G`, e.g. `PhangC01ANN2G000010` with `--after_seqid_tag ANN2` — useful when the same assembly has multiple annotations (default: no tag); does not affect numbering |
+| `--skip_sanity_check` | No | Skip the pre-renaming structural sanity check |
+| `--check_only` | No | Run the sanity check and print the report, then exit without renaming |
+| `--force` | No | Proceed with renaming even if the sanity check finds error-level problems |
+| `--dry_run` | No | Parse and report counts, then exit without writing output |
+| `--version` | No | Show version and exit |
+| `--help` | No | Show help and exit |
+
+**Sanity check**
+
+Runs automatically before renaming (deliberately generic, not tuned to
+any one annotation tool, since BRAKER/MAKER/HELIXER/EVIANN/EGAPX/ANNEVO/
+TransDecoder output all fail in different ways):
+
+*Error-level* (abort by default, since renaming would be unreliable):
+duplicate IDs, genes/transcripts with no ID, `Parent` referencing an ID
+that doesn't exist anywhere in the file, invalid coordinates
+(`start < 1` or `start > end`), and a feature on a different SeqID than
+its `Parent` (a strong sign of a corrupted or badly merged GFF3).
+
+*Warning-level* (reported, non-fatal): genes with no transcript
+children, transcripts with no exon/CDS/UTR children, a feature whose
+coordinates extend beyond its `Parent`'s range, a feature on a different
+strand than its `Parent`, and features that look like exact duplicates
+(same seqid/coordinates/strand/type/parent — a common artifact of
+merging multiple annotation runs, e.g. combining several BRAKER
+predictions; can also false-positive on two genuinely distinct
+transcripts that happen to share the same outer span, so treat it as a
+prompt to check, not a guaranteed problem).
+
+Use `--check_only` to run just the check (e.g. as a pre-flight QC step
+on a fresh tool output before deciding whether to rename at all),
+`--force` to rename anyway despite errors (affected features may end up
+with an incorrect `Parent`/`OldFeatID`), or `--skip_sanity_check` to
+bypass the check entirely.
+
+**Naming scheme**
+
+```
+Gene:       {SeqID}{tag}G{gene_number}          e.g. PhangC01G000010
+Transcript: {gene_ID}T{transcript_number}       e.g. PhangC01G000010T01
+Exon:       {transcript_ID}EXO{exon_number}     e.g. PhangC01G000010T01EXO01
+CDS:        {transcript_ID}CDS{cds_number}      e.g. PhangC01G000010T01CDS01
+UTR:        {transcript_ID}UTR{utr_number}      e.g. PhangC01G000010T01UTR01
+```
+
+- Gene numbers restart at 10 on every new SeqID and increment by 10 (10, 20, 30 ...), leaving gaps for later manual insertions — unless `--prefix_geneid` is set, in which case numbering becomes one continuous count across the whole file instead, so IDs built from a shared, non-SeqID-derived prefix stay unique.
+- `--after_seqid_tag` inserts a fixed tag between the SeqID (or `--prefix_geneid`) and the `G`; it doesn't affect numbering either way.
+- Transcript numbers restart at 01 for every gene, ordered by start coordinate.
+- Exon, CDS, and UTR numbers are independent counters that each restart at 01 for every transcript, and follow transcript direction (ascending start on `+` strand, descending on `-` strand) — not raw genomic order.
+- `five_prime_UTR` and `three_prime_UTR` share one continuous UTR numbering, 5' → 3' along the transcript.
+- A "gene" is any column-3 type matching `--gene_type`. A transcript is any feature whose `Parent` points to a gene, regardless of its own column-3 type (`mRNA`, `tRNA`, `ncRNA`, ...). A subfeature is any feature whose `Parent` points to a transcript; an unrecognized subfeature type is suffixed with the first 3 letters of its own type instead of EXO/CDS/UTR, with a warning.
+- Every other original attribute (`Note=`, `product=`, `Dbxref=`, ...) is preserved; only `ID`/`Parent` are replaced, and the original ID (or `{seqid}:{start}-{end}` if the feature had none) is appended as a trailing `OldFeatID=`.
+- Features shared by multiple parents (`Parent=mRNA1,mRNA2`) are written once, with both renamed parents listed.
+- Pragma lines, comments, and any feature outside the gene/transcript/subfeature hierarchy (e.g. a standalone `region` line) pass through unchanged, with no `OldFeatID` added.
+- Output is grouped by SeqID (natural sort order) then by gene → transcript → subfeature, not raw input file order.
+- Stats (gene/transcript/subfeature/passthrough counts, and warnings for missing IDs or unresolved Parent references) are printed to stderr.
