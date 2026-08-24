@@ -22,6 +22,7 @@ Apply those standards to any new scripts added here.
 | `scripts/GetFasta4EarlGreyGFF.py` | Extract FASTA sequences for TE features from an EarlGrey repeat-annotation GFF3, strand-aware, sanitized headers |
 | `scripts/GFF3RenameGenes.py` | Systematically rename gene/transcript/exon/CDS/UTR IDs in a GFF3 using a fixed SeqID-based numbering scheme, preserving old IDs as OldFeatID= |
 | `scripts/GFF2BEDOrthoVenn.py` | Convert a GFF3 file to the 5-column BED format (SeqID, GeneID, Start, End, Strand) expected by OrthoVennPlus |
+| `scripts/GAQET2AHRD.py` | Parse a GAQET run's GAQET.log.txt for its TREMBL/SWISSPROT diamond commands, build an AHRD YAML config, and run AHRD |
 
 ## Design principles for this collection
 

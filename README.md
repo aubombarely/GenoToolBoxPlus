@@ -11,6 +11,7 @@ A collection of general-purpose command-line scripts for genomics and genome ann
 - [GetFasta4EarlGreyGFF.py](#getfasta4earlgreygffpy) — Extract FASTA sequences for TE features from an EarlGrey GFF3
 - [GFF3RenameGenes.py](#gff3renamegenespy) — Systematically rename gene models in a GFF3 file
 - [GFF2BEDOrthoVenn.py](#gff2bedorthovennpy) — Convert a GFF3 file to the 5-column BED format expected by OrthoVennPlus
+- [GAQET2AHRD.py](#gaqet2ahrdpy) — Build an AHRD config from a GAQET run and run AHRD
 
 ## Requirements
 
@@ -421,3 +422,51 @@ GFF2BEDOrthoVenn.py --gff annotation.gff3 --dry_run
 - Coordinates are copied as-is from the GFF3 (1-based, inclusive) — this matches OrthoVennPlus's expected layout, not 0-based BED.
 - Rows are sorted by `(SeqID, Start)`, SeqID in natural sort order.
 - Stats (rows written, skipped-for-missing-ID count) are printed to stderr.
+
+### GAQET2AHRD.py
+
+Parse a [GAQET](https://github.com/aubombarely/GAQET) run's `GAQET.log.txt`
+for the exact TREMBL/SWISSPROT `diamond blastp` commands it used, build an
+[AHRD](https://github.com/groupschoof/AHRD) YAML config from them, and (by
+default) run AHRD via `java -jar $AHRD_JAR config.yml`.
+
+**Usage**
+
+```bash
+GAQET2AHRD.py --gaqet_log GAQET.log.txt --ahrd_jar /opt/ahrd/ahrd.jar --ahrd_home /opt/ahrd
+AHRD_JAR=/opt/ahrd/ahrd.jar AHRD_HOME=/opt/ahrd GAQET2AHRD.py --gaqet_log GAQET.log.txt
+GAQET2AHRD.py --gaqet_log GAQET.log.txt --skip_ahrd
+GAQET2AHRD.py --gaqet_log GAQET.log.txt --dry_run
+```
+
+**Arguments**
+
+| Argument | Required | Description |
+|----------|----------|-------------|
+| `--gaqet_log` | Yes | Path to a GAQET run's `GAQET.log.txt` |
+| `--output` | No | Output directory for the config and AHRD results (default: `AHRD_run/` next to `--gaqet_log`) |
+| `--ahrd_jar` | No | Path to `ahrd.jar` (default: `$AHRD_JAR` env var); required unless `--skip_ahrd` |
+| `--ahrd_home` | No | Path to an AHRD checkout (default: `$AHRD_HOME` env var); when set, defaults the filter files below to `{ahrd_home}/test/resources/` |
+| `--java_bin` | No | `java` executable to use (default: `java`) |
+| `--java_xmx` | No | JVM max heap, e.g. `8g` (default: unset) |
+| `--swissprot_weight` | No | `blast_dbs.swissprot.weight` (default: `653`) |
+| `--trembl_weight` | No | `blast_dbs.trembl.weight` (default: `904`) |
+| `--swissprot_desc_weight` | No | `blast_dbs.swissprot.description_score_bit_score_weight` (default: `2.717061`) |
+| `--trembl_desc_weight` | No | `blast_dbs.trembl.description_score_bit_score_weight` (default: `2.590211`) |
+| `--token_bit_score_weight` | No | `token_score_bit_score_weight` (default: `0.468`) |
+| `--token_database_score_weight` | No | `token_score_database_score_weight` (default: `0.2098`) |
+| `--token_overlap_score_weight` | No | `token_score_overlap_score_weight` (default: `0.3221`) |
+| `--blacklist` | No | AHRD `blacklist_descline` file, shared by both DBs (default: derived from `--ahrd_home`, else omitted) |
+| `--swissprot_filter` | No | AHRD `filter_descline` file for swissprot (default: derived from `--ahrd_home`, else omitted) |
+| `--trembl_filter` | No | AHRD `filter_descline` file for trembl (default: derived from `--ahrd_home`, else omitted) |
+| `--token_blacklist` | No | AHRD `blacklist_token` file, shared by both DBs (default: derived from `--ahrd_home`, else omitted) |
+| `--skip_ahrd` | No | Write the config only; do not invoke AHRD |
+| `--dry_run` | No | Parse the log and print what would be written/run, then exit |
+| `--version` | No | Show version and exit |
+| `--help` | No | Show help and exit |
+
+**Notes**
+- AHRD needs the flat FASTA (with description headers) of each blast DB, not the diamond `.dmnd` index used for the search — derived by swapping the `--db` path's extension to `.fasta`; a warning is printed if that file isn't found, since the path may need manual correction in the generated config.
+- The AHRD output filename prefix is taken from GAQET's own `{prefix}_GAQET.stats.tsv` file, found by globbing `--gaqet_log`'s directory; falls back to `AHRD` if not found.
+- A warning (not an error) is printed if the log's success marker (`run successfully`) isn't found after either command, or if any referenced file (proteins FASTA, diamond output, derived DB FASTA, blacklist/filter files) doesn't exist on disk — the config is still written so paths can be corrected by hand if needed.
+- Default weights match a validated real-world AHRD config tuned for plant genome annotation; override any of them per-run as needed.
