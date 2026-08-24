@@ -10,6 +10,7 @@ A collection of general-purpose command-line scripts for genomics and genome ann
 - [NCBI_DownloadGenome.py](#ncbi_downloadgenomepy) — Download genome FASTA/GFF3 from NCBI with optional SeqID renaming
 - [GetFasta4EarlGreyGFF.py](#getfasta4earlgreygffpy) — Extract FASTA sequences for TE features from an EarlGrey GFF3
 - [GFF3RenameGenes.py](#gff3renamegenespy) — Systematically rename gene models in a GFF3 file
+- [GFF2BEDOrthoVenn.py](#gff2bedorthovennpy) — Convert a GFF3 file to the 5-column BED format expected by OrthoVennPlus
 
 ## Requirements
 
@@ -390,3 +391,33 @@ UTR:        {transcript_ID}UTR{utr_number}      e.g. PhangC01G000010T01UTR01
 - Pragma lines, comments, and any feature outside the gene/transcript/subfeature hierarchy (e.g. a standalone `region` line) pass through unchanged, with no `OldFeatID` added.
 - Output is grouped by SeqID (natural sort order) then by gene → transcript → subfeature, not raw input file order.
 - Stats (gene/transcript/subfeature/passthrough counts, and warnings for missing IDs or unresolved Parent references) are printed to stderr.
+
+### GFF2BEDOrthoVenn.py
+
+Convert a GFF3 file to the 5-column BED format expected by
+[OrthoVennPlus](https://orthovenn3.bioinfotoolkits.net/):
+`SeqID  GeneID  Start  End  Strand`.
+
+**Usage**
+
+```bash
+GFF2BEDOrthoVenn.py --gff annotation.gff3 --output annotation.bed
+GFF2BEDOrthoVenn.py --gff annotation.gff3 --dry_run
+```
+
+**Arguments**
+
+| Argument | Required | Description |
+|----------|----------|-------------|
+| `--gff` | Yes | Input GFF3 file |
+| `--output` | No | Output BED file (default: stdout) |
+| `--feature_type` | No | Column-3 feature type to extract (default: `gene`) |
+| `--dry_run` | No | Parse and report counts, then exit without writing output |
+| `--version` | No | Show version and exit |
+| `--help` | No | Show help and exit |
+
+**Notes**
+- `GeneID` is taken from the `ID=` attribute; features of `--feature_type` with no `ID=` are skipped with a warning.
+- Coordinates are copied as-is from the GFF3 (1-based, inclusive) — this matches OrthoVennPlus's expected layout, not 0-based BED.
+- Rows are sorted by `(SeqID, Start)`, SeqID in natural sort order.
+- Stats (rows written, skipped-for-missing-ID count) are printed to stderr.

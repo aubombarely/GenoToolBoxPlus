@@ -21,6 +21,7 @@ Apply those standards to any new scripts added here.
 | `scripts/NCBI_DownloadGenome.py` | Download genome FASTA/GFF3 from NCBI (accessions.txt, same format as annotseba), optional SeqID renaming |
 | `scripts/GetFasta4EarlGreyGFF.py` | Extract FASTA sequences for TE features from an EarlGrey repeat-annotation GFF3, strand-aware, sanitized headers |
 | `scripts/GFF3RenameGenes.py` | Systematically rename gene/transcript/exon/CDS/UTR IDs in a GFF3 using a fixed SeqID-based numbering scheme, preserving old IDs as OldFeatID= |
+| `scripts/GFF2BEDOrthoVenn.py` | Convert a GFF3 file to the 5-column BED format (SeqID, GeneID, Start, End, Strand) expected by OrthoVennPlus |
 
 ## Design principles for this collection
 
