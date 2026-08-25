@@ -3,6 +3,14 @@
 All notable changes to GenoToolBoxPlus are documented here. See `CITATION.cff`
 for the version to cite.
 
+## [v0.2.2] — 2026-08-25
+
+### Added
+- `GAQET2AHRD.py`: `<prefix>_AHRD.summary.txt` written after a successful
+  AHRD run — counts of proteins with a description/GO term(s) vs. unknown,
+  the AHRD-Quality-Code distribution, and the `--top_n` (default 10) most
+  abundant descriptions. Disable with `--skip_summary`.
+
 ## [v0.2.1] — 2026-08-25
 
 ### Added

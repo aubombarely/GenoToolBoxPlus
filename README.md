@@ -1,6 +1,6 @@
 # GenoToolBoxPlus
 
-<img src="https://img.shields.io/badge/version-v0.2.1-teal"/> <img src="https://img.shields.io/badge/python-3.9%2B-blue"/> <img src="https://img.shields.io/badge/platform-Linux%20%7C%20macOS-lightgrey"/> [Changelog](CHANGELOG.md)
+<img src="https://img.shields.io/badge/version-v0.2.2-teal"/> <img src="https://img.shields.io/badge/python-3.9%2B-blue"/> <img src="https://img.shields.io/badge/platform-Linux%20%7C%20macOS-lightgrey"/> [Changelog](CHANGELOG.md)
 
 A collection of general-purpose command-line scripts for genomics and genome annotation tasks. See [`CITATION.cff`](CITATION.cff) for how to cite this collection.
 
@@ -580,6 +580,8 @@ GAQET2AHRD.py --gaqet_log GAQET.log.txt --dry_run
 | `--token_blacklist` | No | AHRD `blacklist_token` file, shared by both DBs (default: derived from `--ahrd_home`, else omitted) |
 | `--gene_ontology_result` | No | GO Annotation (GAF) file for GO term transfer (default: `goa_uniprot_all.gaf` in the same directory as the SWISSPROT `--db` from `GAQET.log.txt`) |
 | `--skip_go` | No | Do not transfer GO terms (omit `gene_ontology_result`/`reference_go_regex`/`prefer_reference_with_go_annos` from the config) |
+| `--top_n` | No | Number of most abundant descriptions to list in the summary (default: `10`) |
+| `--skip_summary` | No | Do not write `<prefix>_AHRD.summary.txt` after AHRD finishes |
 | `--skip_ahrd` | No | Write the config only; do not invoke AHRD |
 | `--dry_run` | No | Parse the log and print what would be written/run, then exit |
 | `--version` | No | Show version and exit |
@@ -591,6 +593,37 @@ GAQET2AHRD.py --gaqet_log GAQET.log.txt --dry_run
 - A warning (not an error) is printed if the log's success marker (`run successfully`) isn't found after either command, or if any referenced file (proteins FASTA, diamond output, derived DB FASTA, blacklist/filter files, GO GAF file) doesn't exist on disk — the config is still written so paths can be corrected by hand if needed.
 - GO term transfer is on by default (`gene_ontology_result`/`reference_go_regex`/`prefer_reference_with_go_annos`); use `--skip_go` to omit it entirely.
 - Default weights match a validated real-world AHRD config tuned for plant genome annotation; override any of them per-run as needed.
+
+**Summary report**
+
+After a successful AHRD run, `<prefix>_AHRD.summary.txt` is written next
+to the AHRD output TSV (skip with `--skip_summary`):
+
+```
+AHRD functional annotation summary
+Source: Abeliophyllum_distichum_ANv1_AHRD.tsv
+
+Total proteins             : 34521
+With description           : 29876 (86.5%)
+Unknown / no description   : 4645 (13.5%)
+With GO term(s)            : 24103 (69.8%)
+
+AHRD-Quality-Code distribution:
+  ***        18204  (52.7%)
+  **-         6532  (18.9%)
+  ...
+
+Top 10 most abundant descriptions:
+   1.    412  Putative disease resistance protein
+   2.    298  Reverse transcriptase
+   ...
+```
+
+Column positions (description, GO term, AHRD-Quality-Code) are located by
+header keyword rather than a fixed index, since the exact column set
+depends on the AHRD config (e.g. whether GO/InterPro were requested). A
+protein counts as "with description" unless its description is empty or
+starts with `Unknown protein` (AHRD's own placeholder for no hit).
 
 ## Third-party tools and citations
 

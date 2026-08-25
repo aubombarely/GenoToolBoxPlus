@@ -37,6 +37,11 @@ goa_uniprot_all.gaf in the same directory as the SWISSPROT --db (the
 standard layout alongside uniprot_sprot*.dmnd), override with
 --gene_ontology_result or disable with --skip_go.
 
+After a successful AHRD run, a <prefix>_AHRD.summary.txt is written next to
+the AHRD output TSV: counts of proteins with a description/GO term(s) vs.
+unknown, the AHRD-Quality-Code distribution, and the --top_n most abundant
+descriptions. Use --skip_summary to omit it.
+
 Usage
 -----
     GAQET2AHRD.py --gaqet_log GAQET.log.txt --ahrd_jar /opt/ahrd/ahrd.jar \\
@@ -53,9 +58,12 @@ import os
 import re
 import subprocess
 import sys
+from collections import Counter
 from pathlib import Path
 
-VERSION = "v0.0.1"
+VERSION = "v0.1.0"
+
+DEFAULT_TOP_N = 10
 
 DEFAULT_SWISSPROT_WEIGHT = 653
 DEFAULT_TREMBL_WEIGHT = 904
@@ -181,6 +189,90 @@ def find_gaqet_prefix(gaqet_log: Path) -> str:
     return Path(hits[0]).name[: -len("_GAQET.stats.tsv")]
 
 
+def summarize_ahrd_output(tsv_path: Path) -> dict:
+    """Parse AHRD's output TSV and compute summary metrics. Column
+    positions are located by header keyword rather than fixed index, since
+    the exact column set depends on the AHRD config (e.g. whether GO/
+    InterPro were requested). Returns a dict with n_total, n_with_desc,
+    n_unknown, n_with_go, quality_counts (Counter), desc_counts (Counter)."""
+    n_total = 0
+    n_with_desc = 0
+    n_with_go = 0
+    quality_counts = Counter()
+    desc_counts = Counter()
+
+    with open(tsv_path) as fh:
+        idx = {}
+        for line in fh:
+            line = line.rstrip("\n")
+            if not line:
+                continue
+            cols = line.split("\t")
+            if not idx:
+                for i, col in enumerate(cols):
+                    key = col.strip().lower()
+                    if "quality-code" in key:
+                        idx["quality"] = i
+                    elif "description" in key:
+                        idx["description"] = i
+                    elif "gene-ontology" in key or "go-id" in key or key.startswith("go"):
+                        idx["go"] = i
+                continue
+
+            n_total += 1
+            desc = cols[idx["description"]].strip() if "description" in idx and idx["description"] < len(cols) else ""
+            go = cols[idx["go"]].strip() if "go" in idx and idx["go"] < len(cols) else ""
+            quality = cols[idx["quality"]].strip() if "quality" in idx and idx["quality"] < len(cols) else ""
+
+            if desc and not desc.lower().startswith("unknown protein"):
+                n_with_desc += 1
+                desc_counts[desc] += 1
+            if go:
+                n_with_go += 1
+            if quality:
+                quality_counts[quality] += 1
+
+    return {
+        "n_total": n_total,
+        "n_with_desc": n_with_desc,
+        "n_unknown": n_total - n_with_desc,
+        "n_with_go": n_with_go,
+        "quality_counts": quality_counts,
+        "desc_counts": desc_counts,
+    }
+
+
+def write_ahrd_summary(summary: dict, tsv_path: Path, out_path: Path, top_n: int) -> None:
+    def pct(n: int) -> str:
+        return f"{100 * n / summary['n_total']:.1f}%" if summary["n_total"] else "0.0%"
+
+    lines = [
+        "AHRD functional annotation summary",
+        f"Source: {tsv_path}",
+        "",
+        f"Total proteins             : {summary['n_total']}",
+        f"With description           : {summary['n_with_desc']} ({pct(summary['n_with_desc'])})",
+        f"Unknown / no description   : {summary['n_unknown']} ({pct(summary['n_unknown'])})",
+        f"With GO term(s)            : {summary['n_with_go']} ({pct(summary['n_with_go'])})",
+        "",
+        "AHRD-Quality-Code distribution:",
+    ]
+    if summary["quality_counts"]:
+        for code, count in summary["quality_counts"].most_common():
+            lines.append(f"  {code:<6} {count:>8}  ({pct(count)})")
+    else:
+        lines.append("  (no AHRD-Quality-Code column found in the output TSV)")
+
+    lines += ["", f"Top {top_n} most abundant descriptions:"]
+    if summary["desc_counts"]:
+        for rank, (desc, count) in enumerate(summary["desc_counts"].most_common(top_n), start=1):
+            lines.append(f"  {rank:>2}. {count:>6}  {desc}")
+    else:
+        lines.append("  (no annotated descriptions found)")
+
+    out_path.write_text("\n".join(lines) + "\n")
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(
         prog="GAQET2AHRD",
@@ -264,6 +356,12 @@ def main(argv=None):
                     help="Do not transfer GO terms (omit gene_ontology_"
                          "result/reference_go_regex/prefer_reference_with_"
                          "go_annos from the config)")
+    ap.add_argument("--top_n", type=int, default=DEFAULT_TOP_N,
+                    help=f"Number of most abundant descriptions to list in "
+                         f"the summary (default: {DEFAULT_TOP_N})")
+    ap.add_argument("--skip_summary", action="store_true",
+                    help="Do not write the <prefix>_AHRD.summary.txt "
+                         "report after AHRD finishes")
     ap.add_argument("--skip_ahrd", action="store_true",
                     help="Write the AHRD config only; do not invoke AHRD")
     ap.add_argument("--dry_run", action="store_true",
@@ -389,6 +487,22 @@ def main(argv=None):
               file=sys.stderr)
         sys.exit(1)
     print(f"AHRD finished. Output: {output_tsv}", file=sys.stderr)
+
+    if args.skip_summary:
+        print("Summary skipped (--skip_summary)", file=sys.stderr)
+        return
+    if not output_tsv.exists():
+        print(f"WARNING: AHRD reported success but output TSV not found: "
+              f"{output_tsv} — skipping summary", file=sys.stderr)
+        return
+
+    summary = summarize_ahrd_output(output_tsv)
+    summary_path = output_tsv.with_suffix(".summary.txt")
+    write_ahrd_summary(summary, output_tsv, summary_path, args.top_n)
+    print(f"Written: {summary_path}", file=sys.stderr)
+    print(f"  {summary['n_with_desc']}/{summary['n_total']} proteins with "
+          f"description, {summary['n_with_go']}/{summary['n_total']} with "
+          f"GO term(s)", file=sys.stderr)
 
 
 if __name__ == "__main__":
