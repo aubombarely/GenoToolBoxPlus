@@ -4,7 +4,9 @@ Collection of general-purpose, zero-dependency CLI scripts for genomics and
 genome annotation tasks. Each script is self-contained and uses the Python
 standard library only.
 
-**Current version:** v0.0.1 (per script)
+**Current version:** v0.2.1 (overall repo/citation version, tracked in
+`CITATION.cff` and `CHANGELOG.md`; each script also carries its own
+independent `VERSION` string for `--version`/troubleshooting)
 
 This project follows the shared coding blueprint at `../CLAUDE.md`.
 Apply those standards to any new scripts added here.
@@ -60,8 +62,8 @@ Apply those standards to any new scripts added here.
 - [x] `VERSION` string per script
 - [x] `--version` argument
 - [ ] `--dry_run` flag — add to new scripts
-- [ ] `CHANGELOG.md` — add when scripts reach v0.1.0
-- [ ] README version badge — add when CHANGELOG is in place
+- [x] `CHANGELOG.md` — added at v0.2.1
+- [x] README version badge — added at v0.2.1
 
 ## FAIR compliance status
 
