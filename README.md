@@ -27,10 +27,17 @@ A collection of general-purpose command-line scripts for genomics and genome ann
 
 ## Scripts
 
+<br>
 
 ---
 
-## <img src="https://img.shields.io/badge/-FASTA__Utilities-4C9BE8?style=for-the-badge" height="34" alt="FASTA_Utilities">
+---
+
+## <img src="https://img.shields.io/badge/-FASTA__Utilities-4C9BE8?style=for-the-badge" height="42" alt="FASTA_Utilities">
+
+- [FastaRename.py](#fastarenamepy) — Rename sequence IDs in a FASTA file using a two-column TSV mapping
+- [FastaStats.py](#fastastatspy) — Compute per-assembly and nucleotide-composition statistics for a FASTA file
+- [GFA2FASTA.py](#gfa2fastapy) — Convert GFA (v1 or v2) assembly graph segments to FASTA
 
 <br>
 
@@ -152,9 +159,15 @@ GFA2FASTA.py --input assembly.gfa --output assembly.fasta --summary summary.txt
 - Stats (segments written/skipped, total length) are printed to stderr.
 
 
+<br>
+
 ---
 
-## <img src="https://img.shields.io/badge/-GenomicData__Download-F5A623?style=for-the-badge" height="34" alt="GenomicData_Download">
+---
+
+## <img src="https://img.shields.io/badge/-GenomicData__Download-F5A623?style=for-the-badge" height="42" alt="GenomicData_Download">
+
+- [NCBI_DownloadGenome.py](#ncbi_downloadgenomepy) — Download genome FASTA/GFF3 from NCBI with optional SeqID renaming
 
 <br>
 
@@ -286,9 +299,15 @@ to recompute from a fresh download in that case.
 - Stats (sequences renamed, files written) are printed to stderr.
 
 
+<br>
+
 ---
 
-## <img src="https://img.shields.io/badge/-GFF__Utilities-888888?style=for-the-badge" height="34" alt="GFF_Utilities">
+---
+
+## <img src="https://img.shields.io/badge/-GFF__Utilities-888888?style=for-the-badge" height="42" alt="GFF_Utilities">
+
+- [GFF3RenameGenes.py](#gff3renamegenespy) — Systematically rename gene models in a GFF3 file
 
 <br>
 
@@ -378,9 +397,17 @@ UTR:        {transcript_ID}UTR{utr_number}      e.g. PhangC01G000010T01UTR01
 - Stats (gene/transcript/subfeature/passthrough counts, and warnings for missing IDs or unresolved Parent references) are printed to stderr.
 
 
+<br>
+
 ---
 
-## <img src="https://img.shields.io/badge/-ThirdPartyTool__Utilities-E8604C?style=for-the-badge" height="34" alt="ThirdPartyTool_Utilities">
+---
+
+## <img src="https://img.shields.io/badge/-ThirdPartyTool__Utilities-E8604C?style=for-the-badge" height="42" alt="ThirdPartyTool_Utilities">
+
+- [GetFasta4EarlGreyGFF.py](#getfasta4earlgreygffpy) — Extract FASTA sequences for TE features from an EarlGrey GFF3
+- [GFF2BEDOrthoVenn.py](#gff2bedorthovennpy) — Convert a GFF3 file to the 5-column BED format expected by OrthoVennPlus
+- [GAQET2AHRD.py](#gaqet2ahrdpy) — Build an AHRD config from a GAQET run and run AHRD
 
 <br>
 
