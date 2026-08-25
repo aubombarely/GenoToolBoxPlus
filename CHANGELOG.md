@@ -3,6 +3,18 @@
 All notable changes to GenoToolBoxPlus are documented here. See `CITATION.cff`
 for the version to cite.
 
+## [v0.2.4] — 2026-08-25
+
+### Fixed
+- `GAQET2AHRD.py`: the summary always reported 0% of proteins with a
+  description. AHRD's TSV also has an `Interpro-ID (Description)` column
+  (present, and empty, even when InterPro isn't configured); the
+  description-column detector matched both it and the real
+  `Human-Readable-Description` column and kept the later (empty) match,
+  so every description read as blank. Fixed by excluding any column whose
+  header contains "interpro". Also skip `#`-prefixed comment lines (e.g.
+  AHRD's leading `# AHRD-Version 3.11` line) explicitly.
+
 ## [v0.2.3] — 2026-08-25
 
 ### Added

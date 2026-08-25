@@ -62,7 +62,7 @@ import sys
 from collections import Counter
 from pathlib import Path
 
-VERSION = "v0.2.0"
+VERSION = "v0.2.1"
 
 DEFAULT_TOP_N = 10
 
@@ -206,7 +206,7 @@ def summarize_ahrd_output(tsv_path: Path) -> dict:
         idx = {}
         for line in fh:
             line = line.rstrip("\n")
-            if not line:
+            if not line or line.startswith("#"):
                 continue
             cols = line.split("\t")
             if not idx:
@@ -214,10 +214,14 @@ def summarize_ahrd_output(tsv_path: Path) -> dict:
                     key = col.strip().lower()
                     if "quality-code" in key:
                         idx["quality"] = i
-                    elif "description" in key:
-                        idx["description"] = i
                     elif "gene-ontology" in key or "go-id" in key or key.startswith("go"):
                         idx["go"] = i
+                    elif "description" in key and "interpro" not in key:
+                        # AHRD's TSV also has an "Interpro-ID (Description)"
+                        # column (empty unless InterPro was configured) --
+                        # excluded so it can't clobber the real
+                        # "Human-Readable-Description" column below.
+                        idx["description"] = i
                 continue
 
             n_total += 1
