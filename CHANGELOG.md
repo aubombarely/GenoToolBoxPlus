@@ -3,6 +3,25 @@
 All notable changes to GenoToolBoxPlus are documented here. See `CITATION.cff`
 for the version to cite.
 
+## [v0.2.5] — 2026-08-25
+
+### Added
+- `GAQET2AHRD.py`: `--check_te_goterms` cross-checks AHRD's transferred GO
+  terms against DETENGA's own TE calls (`DeTEnGA_status`), to catch
+  protein-coding gene models that are actually TE-derived. Writes
+  `<prefix>_TEGOterm_vs_DETENGA.tsv` (ProteinID, AHRD_GO_TEs, DETENGA_TE,
+  GOTE_TAGGED, DETENGA_TAGGED) and prints an agreement summary.
+  `--te_goterms_file` overrides the hardcoded default TE-associated GO
+  term list; `--print_te_associated_default_goterms` prints it.
+  `--detenga_csv` overrides the default `DETENGA_run/{prefix}_TE_summary.csv`
+  path. `GOTE_TAGGED=YES` requires every one of a protein's GO terms to be
+  TE-associated (strict "only" rule); `NA` in either tag column means "no
+  info available", not "checked and not a TE".
+- `GAQET2AHRD.py`: `--skip_ahrd` no longer always skips the summary/TE
+  check — if the AHRD output TSV already exists from an earlier run, the
+  summary and `--check_te_goterms` still run against it (useful for
+  regenerating just those without re-running AHRD).
+
 ## [v0.2.4] — 2026-08-25
 
 ### Fixed

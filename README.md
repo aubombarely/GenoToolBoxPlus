@@ -1,6 +1,6 @@
 # GenoToolBoxPlus
 
-<img src="https://img.shields.io/badge/version-v0.2.4-teal"/> <img src="https://img.shields.io/badge/python-3.9%2B-blue"/> <img src="https://img.shields.io/badge/platform-Linux%20%7C%20macOS-lightgrey"/> [Changelog](CHANGELOG.md)
+<img src="https://img.shields.io/badge/version-v0.2.5-teal"/> <img src="https://img.shields.io/badge/python-3.9%2B-blue"/> <img src="https://img.shields.io/badge/platform-Linux%20%7C%20macOS-lightgrey"/> [Changelog](CHANGELOG.md)
 
 A collection of general-purpose command-line scripts for genomics and genome annotation tasks. See [`CITATION.cff`](CITATION.cff) for how to cite this collection.
 
@@ -582,6 +582,10 @@ GAQET2AHRD.py --gaqet_log GAQET.log.txt --dry_run
 | `--skip_go` | No | Do not transfer GO terms (omit `gene_ontology_result`/`reference_go_regex`/`prefer_reference_with_go_annos` from the config) |
 | `--top_n` | No | Number of most abundant descriptions to list in the summary (default: `10`) |
 | `--skip_summary` | No | Do not write `<prefix>_AHRD.summary.txt` or print the summary tables after AHRD finishes |
+| `--check_te_goterms` | No | Cross-check AHRD's GO terms against DETENGA's TE calls; writes `<prefix>_TEGOterm_vs_DETENGA.tsv` |
+| `--te_goterms_file` | No | TE-associated GO term list, one `GO:#######` per line (default: hardcoded list — see `--print_te_associated_default_goterms`) |
+| `--detenga_csv` | No | DETENGA's `<basename>_TE_summary.csv` (default: `DETENGA_run/{prefix}_TE_summary.csv` next to `--gaqet_log`) |
+| `--print_te_associated_default_goterms` | No | Print the hardcoded default TE-associated GO term list as a table, then exit (does not require `--gaqet_log`) |
 | `--skip_ahrd` | No | Write the config only; do not invoke AHRD |
 | `--dry_run` | No | Parse the log and print what would be written/run, then exit |
 | `--version` | No | Show version and exit |
@@ -635,6 +639,59 @@ header keyword rather than a fixed index, since the exact column set
 depends on the AHRD config (e.g. whether GO/InterPro were requested). A
 protein counts as "with description" unless its description is empty or
 starts with `Unknown protein` (AHRD's own placeholder for no hit).
+
+**TE GO-term vs DETENGA cross-check (`--check_te_goterms`)**
+
+Cross-checks AHRD's transferred GO terms against DETENGA's own dedicated
+TE calls, to catch protein-coding gene models that are actually
+TE-derived. Writes `<prefix>_TEGOterm_vs_DETENGA.tsv`:
+
+| Column | Meaning |
+|---|---|
+| `ProteinID` | AHRD's `Protein-Accession` |
+| `AHRD_GO_TEs` | Comma-separated TE-associated GO terms the protein has (`-` if it has GO terms but none are TE-associated; `NA` if it has no GO terms at all) |
+| `DETENGA_TE` | DETENGA's `DeTEnGA_status` for this protein when it indicates a TE (`-` if DETENGA explicitly called it non-TE; `NA` if the protein isn't in `--detenga_csv` at all) |
+| `GOTE_TAGGED` | `YES` only if **every** GO term the protein has is TE-associated; `NO` if it has GO terms but not all are TE-associated; `NA` if it has no GO terms |
+| `DETENGA_TAGGED` | `YES`/`NO` from whether `DeTEnGA_status` contains `"te"` (e.g. `PteM0`, `P0Mte`, `PteMte` vs `PcpM0`); `NA` if the protein isn't in `--detenga_csv` |
+
+`NA` always means "no info available" (protein missing from the relevant
+source), never "checked and not a TE" — that case is `-`/`NO`.
+
+An agreement summary is printed to stderr:
+
+```
+GOTE vs DETENGA agreement:
++-------------------------------+-------+
+| Category                      | Count |
++-------------------------------+-------+
+| Both TE (agree)               |  1834 |
+| Both non-TE (agree)           | 28442 |
+| GO-only TE (DETENGA: non-TE)  |   112 |
+| DETENGA TE (GO: not TE-only)  |   890 |
+| Incomplete info (either NA)   |  3138 |
++-------------------------------+-------+
+```
+
+Use `--print_te_associated_default_goterms` to see the hardcoded default
+TE GO term list (transposase/reverse-transcriptase/integrase molecular
+functions, transposition biological processes, retrotransposon
+nucleocapsid/assembly components); override with `--te_goterms_file`
+(one `GO:#######` per line).
+
+**Notes**
+- `GOTE_TAGGED` uses a strict "only" rule: a protein with one TE GO term
+  and one unrelated GO term is `NO`, not `YES` — a mixed signal isn't
+  treated as confirmation.
+- Both methods can flag **domesticated TE-derived genes** as false
+  positives — genes that now have a real cellular function but retained
+  TE-like domains or GO terms from their evolutionary origin. Treat
+  agreement/disagreement as a prioritization signal for manual review,
+  not a final call.
+- DETENGA can catch TEs that AHRD's GO transfer misses entirely (e.g. a
+  protein with no GO terms at all, where `GOTE_TAGGED=NA` but
+  `DETENGA_TAGGED=YES`) — this is expected, since the two methods use
+  independent evidence (reference GOA GO terms vs. TEsort/InterPro
+  domain calls).
 
 ## Third-party tools and citations
 

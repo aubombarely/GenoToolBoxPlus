@@ -43,6 +43,20 @@ unknown, the AHRD-Quality-Code distribution, and the --top_n most abundant
 descriptions), and the same summary is printed to stderr as ASCII tables.
 Use --skip_summary to omit both.
 
+--check_te_goterms cross-checks AHRD's GO terms against DETENGA's
+dedicated TE calls, to catch
+protein-coding gene models that are actually TE-derived. For each protein:
+a GOTE_TAGGED of YES means every one of its GO terms is in the
+TE-associated set (--te_goterms_file, default: a hardcoded list -- see
+--print_te_associated_default_goterms); NO means it has GO terms but not
+all are TE-associated; NA means it has no GO terms at all (no info).
+DETENGA_TAGGED mirrors this using DETENGA's own combined call
+(DeTEnGA_status containing "te" in either half, e.g. PteM0/P0Mte/PteMte,
+means TE; PcpM0 means confirmed non-TE; a protein missing from DETENGA's
+--detenga_csv entirely gets NA). Writes
+<prefix>_TEGOterm_vs_DETENGA.tsv (ProteinID, AHRD_GO_TEs, DETENGA_TE,
+GOTE_TAGGED, DETENGA_TAGGED) and prints an agreement summary.
+
 Usage
 -----
     GAQET2AHRD.py --gaqet_log GAQET.log.txt --ahrd_jar /opt/ahrd/ahrd.jar \\
@@ -62,7 +76,7 @@ import sys
 from collections import Counter
 from pathlib import Path
 
-VERSION = "v0.2.1"
+VERSION = "v0.3.0"
 
 DEFAULT_TOP_N = 10
 
@@ -77,6 +91,23 @@ DEFAULT_TOKEN_SCORE_OVERLAP_SCORE_WEIGHT = 0.3221
 # UniProt GOA GAF format: column 1 "UniProtKB", column 2 accession, column 4
 # qualifier (excluded when it's a negation, "NOT|..."), column 5 GO term.
 DEFAULT_REFERENCE_GO_REGEX = r"^UniProtKB\\t(?<shortAccession>[^\\t]+)\\t[^\\t]+\\t(?!NOT\\|)[^\\t]*\\t(?<goTerm>GO:\\d{7})"
+
+# GO terms associated with transposable elements (transposase/reverse-
+# transcriptase/integrase activity, transposition processes, retrotransposon
+# nucleocapsid) -- used by --check_te_goterms, override with
+# --te_goterms_file. (go_id, name, category)
+DEFAULT_TE_GOTERMS = [
+    ("GO:0004803", "transposase activity", "molecular_function"),
+    ("GO:0003964", "RNA-directed DNA polymerase activity", "molecular_function"),
+    ("GO:0004523", "RNA-DNA hybrid ribonuclease activity", "molecular_function"),
+    ("GO:0004190", "aspartic-type endopeptidase activity", "molecular_function"),
+    ("GO:0004521", "RNA endonuclease activity", "molecular_function"),
+    ("GO:0006313", "transposition, DNA-mediated", "biological_process"),
+    ("GO:0032197", "transposition, RNA-mediated", "biological_process"),
+    ("GO:0015074", "DNA integration", "biological_process"),
+    ("GO:0000943", "retrotransposon nucleocapsid", "cellular_component"),
+    ("GO:0032068", "retrotransposon assembly", "cellular_component"),
+]
 
 
 def parse_gaqet_log(path: Path) -> dict:
@@ -190,18 +221,15 @@ def find_gaqet_prefix(gaqet_log: Path) -> str:
     return Path(hits[0]).name[: -len("_GAQET.stats.tsv")]
 
 
-def summarize_ahrd_output(tsv_path: Path) -> dict:
-    """Parse AHRD's output TSV and compute summary metrics. Column
-    positions are located by header keyword rather than fixed index, since
-    the exact column set depends on the AHRD config (e.g. whether GO/
-    InterPro were requested). Returns a dict with n_total, n_with_desc,
-    n_unknown, n_with_go, quality_counts (Counter), desc_counts (Counter)."""
-    n_total = 0
-    n_with_desc = 0
-    n_with_go = 0
-    quality_counts = Counter()
-    desc_counts = Counter()
-
+def _iter_ahrd_rows(tsv_path: Path):
+    """Yield (protein_id, description, go_ids, quality_code) tuples from an
+    AHRD output TSV. Column positions (besides protein_id, always column 0)
+    are located by header keyword rather than fixed index, since the exact
+    column set depends on the AHRD config (e.g. whether GO/InterPro were
+    requested); AHRD's leading '# AHRD-Version ...' comment line is
+    skipped. go_ids is a list of GO:####### tokens extracted from the GO
+    column (handles both 'GO:XXXXXXX (name), GO:YYYYYYY (name)' and plain
+    comma-separated forms)."""
     with open(tsv_path) as fh:
         idx = {}
         for line in fh:
@@ -224,18 +252,33 @@ def summarize_ahrd_output(tsv_path: Path) -> dict:
                         idx["description"] = i
                 continue
 
-            n_total += 1
+            protein_id = cols[0].strip() if cols else ""
             desc = cols[idx["description"]].strip() if "description" in idx and idx["description"] < len(cols) else ""
-            go = cols[idx["go"]].strip() if "go" in idx and idx["go"] < len(cols) else ""
+            go_raw = cols[idx["go"]].strip() if "go" in idx and idx["go"] < len(cols) else ""
             quality = cols[idx["quality"]].strip() if "quality" in idx and idx["quality"] < len(cols) else ""
+            go_ids = re.findall(r"GO:\d{7}", go_raw)
+            yield protein_id, desc, go_ids, quality
 
-            if desc and not desc.lower().startswith("unknown protein"):
-                n_with_desc += 1
-                desc_counts[desc] += 1
-            if go:
-                n_with_go += 1
-            if quality:
-                quality_counts[quality] += 1
+
+def summarize_ahrd_output(tsv_path: Path) -> dict:
+    """Compute summary metrics over an AHRD output TSV. Returns a dict with
+    n_total, n_with_desc, n_unknown, n_with_go, quality_counts (Counter),
+    desc_counts (Counter)."""
+    n_total = 0
+    n_with_desc = 0
+    n_with_go = 0
+    quality_counts = Counter()
+    desc_counts = Counter()
+
+    for _protein_id, desc, go_ids, quality in _iter_ahrd_rows(tsv_path):
+        n_total += 1
+        if desc and not desc.lower().startswith("unknown protein"):
+            n_with_desc += 1
+            desc_counts[desc] += 1
+        if go_ids:
+            n_with_go += 1
+        if quality:
+            quality_counts[quality] += 1
 
     return {
         "n_total": n_total,
@@ -337,6 +380,125 @@ def write_ahrd_summary(summary: dict, tsv_path: Path, out_path: Path, top_n: int
     out_path.write_text("\n".join(lines) + "\n")
 
 
+def print_default_te_goterms() -> None:
+    rows = [[go_id, category, name] for go_id, name, category in DEFAULT_TE_GOTERMS]
+    for line in _ascii_table(["GO ID", "Category", "Name"], rows, left_align={0, 1, 2}):
+        print(line, file=sys.stderr)
+
+
+def load_te_goterms(path: Path) -> set:
+    """Return the set of TE-associated GO IDs: DEFAULT_TE_GOTERMS unless
+    --te_goterms_file is given, in which case each line's first
+    GO:####### token is used (blank lines and #-comments skipped)."""
+    if path is None:
+        return {go_id for go_id, _, _ in DEFAULT_TE_GOTERMS}
+    ids = set()
+    for line in path.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        match = re.match(r"GO:\d{7}", line)
+        if match:
+            ids.add(match.group(0))
+    return ids
+
+
+def load_detenga_status(csv_path: Path) -> dict:
+    """Return {Transcript_ID: DeTEnGA_status} from DETENGA's
+    <basename>_TE_summary.csv (semicolon-delimited). DeTEnGA_status
+    encodes two independent TE calls as "P<interpro>M<tesort>", e.g.
+    PcpM0 (Interpro: coding_sequence, TEsort: no hit), PteM0 (Interpro-only
+    TE evidence), P0Mte (TEsort-only TE evidence), PteMte (both agree)."""
+    status_by_id = {}
+    with open(csv_path) as fh:
+        header = None
+        for line in fh:
+            line = line.rstrip("\n")
+            if not line:
+                continue
+            cols = line.split(";")
+            if header is None:
+                header = [c.strip().lower() for c in cols]
+                continue
+            row = dict(zip(header, cols))
+            transcript_id = row.get("transcript_id", "").strip()
+            if transcript_id:
+                status_by_id[transcript_id] = row.get("detenga_status", "").strip()
+    return status_by_id
+
+
+def build_te_goterm_comparison(tsv_path: Path, te_goterms: set, detenga_status: dict) -> list:
+    """Cross-check each AHRD-annotated protein's GO terms against the
+    TE-associated GO set, and against DETENGA's own call. Returns a list of
+    dicts (ProteinID, AHRD_GO_TEs, DETENGA_TE, GOTE_TAGGED, DETENGA_TAGGED)
+    sorted by ProteinID. GOTE_TAGGED is YES only if EVERY GO term the
+    protein has is TE-associated (a mix of TE and non-TE terms is NO, not
+    YES); NA means the protein has no GO terms at all. DETENGA_TAGGED is
+    YES/NO from DeTEnGA_status containing "te"; NA means the protein isn't
+    in detenga_status at all."""
+    rows = []
+    for protein_id, _desc, go_ids, _quality in _iter_ahrd_rows(tsv_path):
+        te_hits = [g for g in go_ids if g in te_goterms]
+        if not go_ids:
+            ahrd_go_tes, gote_tagged = "NA", "NA"
+        elif len(te_hits) == len(go_ids):
+            ahrd_go_tes, gote_tagged = ",".join(te_hits), "YES"
+        else:
+            ahrd_go_tes, gote_tagged = (",".join(te_hits) if te_hits else "-"), "NO"
+
+        status = detenga_status.get(protein_id)
+        if status is None:
+            detenga_te, detenga_tagged = "NA", "NA"
+        elif "te" in status.lower():
+            detenga_te, detenga_tagged = status, "YES"
+        else:
+            detenga_te, detenga_tagged = "-", "NO"
+
+        rows.append({
+            "ProteinID": protein_id, "AHRD_GO_TEs": ahrd_go_tes,
+            "DETENGA_TE": detenga_te, "GOTE_TAGGED": gote_tagged,
+            "DETENGA_TAGGED": detenga_tagged,
+        })
+    rows.sort(key=lambda r: r["ProteinID"])
+    return rows
+
+
+def write_te_goterm_comparison(rows: list, out_path: Path) -> None:
+    columns = ["ProteinID", "AHRD_GO_TEs", "DETENGA_TE", "GOTE_TAGGED", "DETENGA_TAGGED"]
+    with open(out_path, "w") as fh:
+        fh.write("\t".join(columns) + "\n")
+        for row in rows:
+            fh.write("\t".join(row[c] for c in columns) + "\n")
+
+
+def print_te_goterm_agreement(rows: list) -> None:
+    def is_na(row, key):
+        return row[key] == "NA"
+
+    both_te = sum(1 for r in rows if r["GOTE_TAGGED"] == "YES" and r["DETENGA_TAGGED"] == "YES")
+    both_nonte = sum(1 for r in rows if r["GOTE_TAGGED"] == "NO" and r["DETENGA_TAGGED"] == "NO")
+    go_only = sum(1 for r in rows if r["GOTE_TAGGED"] == "YES" and r["DETENGA_TAGGED"] == "NO")
+    detenga_only = sum(1 for r in rows if r["GOTE_TAGGED"] == "NO" and r["DETENGA_TAGGED"] == "YES")
+    incomplete = sum(1 for r in rows if is_na(r, "GOTE_TAGGED") or is_na(r, "DETENGA_TAGGED"))
+
+    print("", file=sys.stderr)
+    print("GOTE vs DETENGA agreement:", file=sys.stderr)
+    agreement_rows = [
+        ["Both TE (agree)", str(both_te)],
+        ["Both non-TE (agree)", str(both_nonte)],
+        ["GO-only TE (DETENGA: non-TE)", str(go_only)],
+        ["DETENGA TE (GO: not TE-only)", str(detenga_only)],
+        ["Incomplete info (either NA)", str(incomplete)],
+    ]
+    for line in _ascii_table(["Category", "Count"], agreement_rows):
+        print(line, file=sys.stderr)
+    print("Note: both methods can flag domesticated-TE-derived genes as "
+          "false positives (real cellular function, but retained TE-like "
+          "domains/GO terms) -- treat agreement/disagreement as a "
+          "prioritization signal for manual review, not a final call.",
+          file=sys.stderr)
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(
         prog="GAQET2AHRD",
@@ -344,8 +506,9 @@ def main(argv=None):
                      "(TREMBL/SWISSPROT diamond commands) and, by default, "
                      "run AHRD on it.",
     )
-    ap.add_argument("--gaqet_log", required=True, type=Path,
-                    help="Path to a GAQET run's GAQET.log.txt")
+    ap.add_argument("--gaqet_log", type=Path, default=None,
+                    help="Path to a GAQET run's GAQET.log.txt (required "
+                         "unless --print_te_associated_default_goterms)")
     ap.add_argument("--output", type=Path, default=None,
                     help="Output directory for the AHRD config and results "
                          "(default: AHRD_run/ next to --gaqet_log)")
@@ -426,6 +589,20 @@ def main(argv=None):
     ap.add_argument("--skip_summary", action="store_true",
                     help="Do not write the <prefix>_AHRD.summary.txt "
                          "report after AHRD finishes")
+    ap.add_argument("--check_te_goterms", action="store_true",
+                    help="Cross-check AHRD's GO terms against DETENGA's TE "
+                         "calls; writes <prefix>_TEGOterm_vs_DETENGA.tsv")
+    ap.add_argument("--te_goterms_file", type=Path, default=None,
+                    help="TE-associated GO term list, one GO:####### per "
+                         "line (default: a hardcoded list -- see "
+                         "--print_te_associated_default_goterms)")
+    ap.add_argument("--detenga_csv", type=Path, default=None,
+                    help="DETENGA's <basename>_TE_summary.csv (default: "
+                         "DETENGA_run/{prefix}_TE_summary.csv next to "
+                         "--gaqet_log)")
+    ap.add_argument("--print_te_associated_default_goterms", action="store_true",
+                    help="Print the hardcoded default TE-associated GO "
+                         "term list as a table, then exit")
     ap.add_argument("--skip_ahrd", action="store_true",
                     help="Write the AHRD config only; do not invoke AHRD")
     ap.add_argument("--dry_run", action="store_true",
@@ -435,10 +612,26 @@ def main(argv=None):
     ap.add_argument("--version", action="version", version=f"%(prog)s {VERSION}")
     args = ap.parse_args(argv)
 
+    if args.print_te_associated_default_goterms:
+        print_default_te_goterms()
+        return
+
+    if args.gaqet_log is None:
+        print("ERROR: --gaqet_log is required (unless "
+              "--print_te_associated_default_goterms)", file=sys.stderr)
+        sys.exit(1)
     if not args.gaqet_log.exists():
         print(f"ERROR: --gaqet_log file not found: {args.gaqet_log}",
               file=sys.stderr)
         sys.exit(1)
+
+    te_goterms = None
+    if args.check_te_goterms:
+        if args.te_goterms_file is not None and not args.te_goterms_file.exists():
+            print(f"ERROR: --te_goterms_file not found: "
+                  f"{args.te_goterms_file}", file=sys.stderr)
+            sys.exit(1)
+        te_goterms = load_te_goterms(args.te_goterms_file)
 
     ahrd_jar = args.ahrd_jar or (Path(os.environ["AHRD_JAR"])
                                   if os.environ.get("AHRD_JAR") else None)
@@ -512,6 +705,13 @@ def main(argv=None):
             print(f"  AHRD run    : {args.java_bin} "
                   f"{'-Xmx' + args.java_xmx + ' ' if args.java_xmx else ''}"
                   f"-jar {ahrd_jar} {config_path}", file=sys.stderr)
+        if args.check_te_goterms:
+            detenga_csv = args.detenga_csv or (
+                args.gaqet_log.parent / "DETENGA_run" / f"{prefix}_TE_summary.csv")
+            print(f"  TE GO check : {len(te_goterms)} TE GO term(s), "
+                  f"DETENGA_csv={detenga_csv}"
+                  f"{' (not found)' if not detenga_csv.exists() else ''}",
+                  file=sys.stderr)
         print("  Exiting (--dry_run). Nothing written or run.",
               file=sys.stderr)
         return
@@ -538,33 +738,53 @@ def main(argv=None):
 
     if args.skip_ahrd:
         print("AHRD run skipped (--skip_ahrd)", file=sys.stderr)
-        return
+    else:
+        cmd = [args.java_bin]
+        if args.java_xmx:
+            cmd.append(f"-Xmx{args.java_xmx}")
+        cmd += ["-jar", str(ahrd_jar), str(config_path)]
+        print(f"  $ {' '.join(cmd)}", file=sys.stderr)
+        result = subprocess.run(cmd)
+        if result.returncode != 0:
+            print(f"ERROR: AHRD exited with code {result.returncode}",
+                  file=sys.stderr)
+            sys.exit(1)
+        print(f"AHRD finished. Output: {output_tsv}", file=sys.stderr)
 
-    cmd = [args.java_bin]
-    if args.java_xmx:
-        cmd.append(f"-Xmx{args.java_xmx}")
-    cmd += ["-jar", str(ahrd_jar), str(config_path)]
-    print(f"  $ {' '.join(cmd)}", file=sys.stderr)
-    result = subprocess.run(cmd)
-    if result.returncode != 0:
-        print(f"ERROR: AHRD exited with code {result.returncode}",
-              file=sys.stderr)
-        sys.exit(1)
-    print(f"AHRD finished. Output: {output_tsv}", file=sys.stderr)
+    # Summary and --check_te_goterms run against output_tsv whenever it
+    # exists -- either just produced above, or from an earlier run when
+    # --skip_ahrd is set (e.g. to only regenerate the summary/TE check).
+    if not output_tsv.exists():
+        if not args.skip_summary or args.check_te_goterms:
+            print(f"WARNING: AHRD output TSV not found: {output_tsv} — "
+                  f"skipping summary/TE check", file=sys.stderr)
+        return
 
     if args.skip_summary:
         print("Summary skipped (--skip_summary)", file=sys.stderr)
-        return
-    if not output_tsv.exists():
-        print(f"WARNING: AHRD reported success but output TSV not found: "
-              f"{output_tsv} — skipping summary", file=sys.stderr)
-        return
+    else:
+        summary = summarize_ahrd_output(output_tsv)
+        summary_path = output_tsv.with_suffix(".summary.txt")
+        write_ahrd_summary(summary, output_tsv, summary_path, args.top_n)
+        print(f"Written: {summary_path}", file=sys.stderr)
+        print_ahrd_summary_tables(summary, args.top_n)
 
-    summary = summarize_ahrd_output(output_tsv)
-    summary_path = output_tsv.with_suffix(".summary.txt")
-    write_ahrd_summary(summary, output_tsv, summary_path, args.top_n)
-    print(f"Written: {summary_path}", file=sys.stderr)
-    print_ahrd_summary_tables(summary, args.top_n)
+    if args.check_te_goterms:
+        detenga_csv = args.detenga_csv or (
+            args.gaqet_log.parent / "DETENGA_run" / f"{prefix}_TE_summary.csv")
+        if detenga_csv.exists():
+            detenga_status = load_detenga_status(detenga_csv)
+        else:
+            print(f"WARNING: --detenga_csv not found: {detenga_csv} — "
+                  f"DETENGA_TE/DETENGA_TAGGED will be NA for every protein",
+                  file=sys.stderr)
+            detenga_status = {}
+
+        te_rows = build_te_goterm_comparison(output_tsv, te_goterms, detenga_status)
+        te_out_path = output_tsv.with_name(f"{prefix}_TEGOterm_vs_DETENGA.tsv")
+        write_te_goterm_comparison(te_rows, te_out_path)
+        print(f"Written: {te_out_path}", file=sys.stderr)
+        print_te_goterm_agreement(te_rows)
 
 
 if __name__ == "__main__":
