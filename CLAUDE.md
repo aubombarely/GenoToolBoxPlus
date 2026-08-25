@@ -43,6 +43,19 @@ Apply those standards to any new scripts added here.
 | `scripts/GFF2BEDOrthoVenn.py` | Convert a GFF3 file to the 5-column BED format (SeqID, GeneID, Start, End, Strand) expected by OrthoVennPlus |
 | `scripts/GAQET2AHRD.py` | Parse a GAQET run's GAQET.log.txt for its TREMBL/SWISSPROT diamond commands, build an AHRD YAML config, and run AHRD |
 
+## Versioning policy (overrides the general blueprint policy for this project)
+
+Applies to the overall repo/citation version (`CITATION.cff`, `CHANGELOG.md`,
+README badge) — not each script's own independent `VERSION` string, which
+follows the general blueprint policy as usual. Bumping a digit resets every
+digit to its right to 0.
+
+| Change type | Bump | Example |
+|---|---|---|
+| New section/group (e.g. a new `*_Utilities`-style category) | major (X.0.0) | 0.1.5 → 1.0.0 |
+| New tool/script added | minor (0.X.0) | 0.2.1 → 0.3.0 |
+| Minor changes (bug fix, doc/README tweak, non-breaking flag) | patch (0.0.X) | 0.2.1 → 0.2.2 |
+
 ## Design principles for this collection
 
 - **No external dependencies** — standard library only; each script must run
