@@ -1,6 +1,6 @@
 # GenoToolBoxPlus
 
-<img src="https://img.shields.io/badge/version-v0.2.5-teal"/> <img src="https://img.shields.io/badge/python-3.9%2B-blue"/> <img src="https://img.shields.io/badge/platform-Linux%20%7C%20macOS-lightgrey"/> [Changelog](CHANGELOG.md)
+<img src="https://img.shields.io/badge/version-v0.2.6-teal"/> <img src="https://img.shields.io/badge/python-3.9%2B-blue"/> <img src="https://img.shields.io/badge/platform-Linux%20%7C%20macOS-lightgrey"/> [Changelog](CHANGELOG.md)
 
 A collection of general-purpose command-line scripts for genomics and genome annotation tasks. See [`CITATION.cff`](CITATION.cff) for how to cite this collection.
 
@@ -651,7 +651,7 @@ TE-derived. Writes `<prefix>_TEGOterm_vs_DETENGA.tsv`:
 | `ProteinID` | AHRD's `Protein-Accession` |
 | `AHRD_GO_TEs` | Comma-separated TE-associated GO terms the protein has (`-` if it has GO terms but none are TE-associated; `NA` if it has no GO terms at all) |
 | `DETENGA_TE` | DETENGA's `DeTEnGA_status` for this protein when it indicates a TE (`-` if DETENGA explicitly called it non-TE; `NA` if the protein isn't in `--detenga_csv` at all) |
-| `GOTE_TAGGED` | `YES` only if **every** GO term the protein has is TE-associated; `NO` if it has GO terms but not all are TE-associated; `NA` if it has no GO terms |
+| `GOTE_TAGGED` | `YES` if **at least one** GO term the protein has is TE-associated; `NO` if it has GO terms but none are TE-associated; `NA` if it has no GO terms |
 | `DETENGA_TAGGED` | `YES`/`NO` from whether `DeTEnGA_status` contains `"te"` (e.g. `PteM0`, `P0Mte`, `PteMte` vs `PcpM0`); `NA` if the protein isn't in `--detenga_csv` |
 
 `NA` always means "no info available" (protein missing from the relevant
@@ -679,9 +679,13 @@ nucleocapsid/assembly components); override with `--te_goterms_file`
 (one `GO:#######` per line).
 
 **Notes**
-- `GOTE_TAGGED` uses a strict "only" rule: a protein with one TE GO term
-  and one unrelated GO term is `NO`, not `YES` — a mixed signal isn't
-  treated as confirmation.
+- `GOTE_TAGGED` uses an "at least one" rule, not "only TE terms": real TE
+  proteins routinely also carry generic companion GO terms (e.g. DNA
+  binding, zinc ion binding) alongside the TE-specific ones, so requiring
+  *every* GO term to be TE-associated essentially never matches in
+  practice — a genuine `Transposase`-annotated protein can easily have
+  `GO:0003677` (DNA binding) and `GO:0008270` (zinc ion binding) alongside
+  `GO:0004803` (transposase activity).
 - Both methods can flag **domesticated TE-derived genes** as false
   positives — genes that now have a real cellular function but retained
   TE-like domains or GO terms from their evolutionary origin. Treat

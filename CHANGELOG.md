@@ -3,6 +3,20 @@
 All notable changes to GenoToolBoxPlus are documented here. See `CITATION.cff`
 for the version to cite.
 
+## [v0.2.6] — 2026-08-25
+
+### Fixed
+- `GAQET2AHRD.py`: `GOTE_TAGGED` never returned `YES` on real data, even
+  for unambiguous transposases. The original rule required *every* GO
+  term on a protein to be TE-associated, but real TE proteins routinely
+  also carry generic companion GO terms (e.g. `GO:0003677` DNA binding,
+  `GO:0008270` zinc ion binding) alongside TE-specific ones, so the ALL
+  rule structurally never matched. Changed to "at least one TE-associated
+  GO term" (ANY, not ALL). Also added the missing `GO:0032196`
+  ("transposition", the general/parent term) to the default TE GO term
+  list — every real example checked had it, but only the child term
+  `GO:0032197` ("transposition, RNA-mediated") was previously included.
+
 ## [v0.2.5] — 2026-08-25
 
 ### Added

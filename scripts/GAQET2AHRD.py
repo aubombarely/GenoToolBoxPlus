@@ -46,11 +46,13 @@ Use --skip_summary to omit both.
 --check_te_goterms cross-checks AHRD's GO terms against DETENGA's
 dedicated TE calls, to catch
 protein-coding gene models that are actually TE-derived. For each protein:
-a GOTE_TAGGED of YES means every one of its GO terms is in the
+a GOTE_TAGGED of YES means at least one of its GO terms is in the
 TE-associated set (--te_goterms_file, default: a hardcoded list -- see
---print_te_associated_default_goterms); NO means it has GO terms but not
-all are TE-associated; NA means it has no GO terms at all (no info).
-DETENGA_TAGGED mirrors this using DETENGA's own combined call
+--print_te_associated_default_goterms) -- real TE proteins routinely also
+carry generic companion GO terms (DNA binding, zinc ion binding, ...), so
+requiring ALL terms to be TE-associated would essentially never match; NA
+means it has no GO terms at all (no info). DETENGA_TAGGED mirrors this
+using DETENGA's own combined call
 (DeTEnGA_status containing "te" in either half, e.g. PteM0/P0Mte/PteMte,
 means TE; PcpM0 means confirmed non-TE; a protein missing from DETENGA's
 --detenga_csv entirely gets NA). Writes
@@ -76,7 +78,7 @@ import sys
 from collections import Counter
 from pathlib import Path
 
-VERSION = "v0.3.0"
+VERSION = "v0.3.1"
 
 DEFAULT_TOP_N = 10
 
@@ -102,6 +104,7 @@ DEFAULT_TE_GOTERMS = [
     ("GO:0004523", "RNA-DNA hybrid ribonuclease activity", "molecular_function"),
     ("GO:0004190", "aspartic-type endopeptidase activity", "molecular_function"),
     ("GO:0004521", "RNA endonuclease activity", "molecular_function"),
+    ("GO:0032196", "transposition", "biological_process"),
     ("GO:0006313", "transposition, DNA-mediated", "biological_process"),
     ("GO:0032197", "transposition, RNA-mediated", "biological_process"),
     ("GO:0015074", "DNA integration", "biological_process"),
@@ -431,20 +434,22 @@ def build_te_goterm_comparison(tsv_path: Path, te_goterms: set, detenga_status: 
     """Cross-check each AHRD-annotated protein's GO terms against the
     TE-associated GO set, and against DETENGA's own call. Returns a list of
     dicts (ProteinID, AHRD_GO_TEs, DETENGA_TE, GOTE_TAGGED, DETENGA_TAGGED)
-    sorted by ProteinID. GOTE_TAGGED is YES only if EVERY GO term the
-    protein has is TE-associated (a mix of TE and non-TE terms is NO, not
-    YES); NA means the protein has no GO terms at all. DETENGA_TAGGED is
-    YES/NO from DeTEnGA_status containing "te"; NA means the protein isn't
-    in detenga_status at all."""
+    sorted by ProteinID. GOTE_TAGGED is YES if the protein has AT LEAST ONE
+    TE-associated GO term (real TE proteins routinely also carry generic
+    companion terms like DNA binding or zinc ion binding, so requiring
+    ALL terms to be TE-associated essentially never fires); NA means the
+    protein has no GO terms at all. DETENGA_TAGGED is YES/NO from
+    DeTEnGA_status containing "te"; NA means the protein isn't in
+    detenga_status at all."""
     rows = []
     for protein_id, _desc, go_ids, _quality in _iter_ahrd_rows(tsv_path):
         te_hits = [g for g in go_ids if g in te_goterms]
         if not go_ids:
             ahrd_go_tes, gote_tagged = "NA", "NA"
-        elif len(te_hits) == len(go_ids):
+        elif te_hits:
             ahrd_go_tes, gote_tagged = ",".join(te_hits), "YES"
         else:
-            ahrd_go_tes, gote_tagged = (",".join(te_hits) if te_hits else "-"), "NO"
+            ahrd_go_tes, gote_tagged = "-", "NO"
 
         status = detenga_status.get(protein_id)
         if status is None:
