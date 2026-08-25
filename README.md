@@ -475,6 +475,8 @@ GAQET2AHRD.py --gaqet_log GAQET.log.txt --dry_run
 | `--swissprot_filter` | No | AHRD `filter_descline` file for swissprot (default: derived from `--ahrd_home`, else omitted) |
 | `--trembl_filter` | No | AHRD `filter_descline` file for trembl (default: derived from `--ahrd_home`, else omitted) |
 | `--token_blacklist` | No | AHRD `blacklist_token` file, shared by both DBs (default: derived from `--ahrd_home`, else omitted) |
+| `--gene_ontology_result` | No | GO Annotation (GAF) file for GO term transfer (default: `goa_uniprot_all.gaf` in the same directory as the SWISSPROT `--db` from `GAQET.log.txt`) |
+| `--skip_go` | No | Do not transfer GO terms (omit `gene_ontology_result`/`reference_go_regex`/`prefer_reference_with_go_annos` from the config) |
 | `--skip_ahrd` | No | Write the config only; do not invoke AHRD |
 | `--dry_run` | No | Parse the log and print what would be written/run, then exit |
 | `--version` | No | Show version and exit |
@@ -483,7 +485,8 @@ GAQET2AHRD.py --gaqet_log GAQET.log.txt --dry_run
 **Notes**
 - AHRD needs the flat FASTA (with description headers) of each blast DB, not the diamond `.dmnd` index used for the search — derived by swapping the `--db` path's extension to `.fasta`; a warning is printed if that file isn't found, since the path may need manual correction in the generated config.
 - The AHRD output filename prefix is taken from GAQET's own `{prefix}_GAQET.stats.tsv` file, found by globbing `--gaqet_log`'s directory; falls back to `AHRD` if not found.
-- A warning (not an error) is printed if the log's success marker (`run successfully`) isn't found after either command, or if any referenced file (proteins FASTA, diamond output, derived DB FASTA, blacklist/filter files) doesn't exist on disk — the config is still written so paths can be corrected by hand if needed.
+- A warning (not an error) is printed if the log's success marker (`run successfully`) isn't found after either command, or if any referenced file (proteins FASTA, diamond output, derived DB FASTA, blacklist/filter files, GO GAF file) doesn't exist on disk — the config is still written so paths can be corrected by hand if needed.
+- GO term transfer is on by default (`gene_ontology_result`/`reference_go_regex`/`prefer_reference_with_go_annos`); use `--skip_go` to omit it entirely.
 - Default weights match a validated real-world AHRD config tuned for plant genome annotation; override any of them per-run as needed.
 
 ## Third-party tools and citations

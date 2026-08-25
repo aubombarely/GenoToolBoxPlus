@@ -32,6 +32,11 @@ filter_descline_trembl.txt; blacklist and token_blacklist are shared).
 Any of --blacklist/--swissprot_filter/--trembl_filter/--token_blacklist can
 override these individually.
 
+GO term transfer is on by default: gene_ontology_result defaults to
+goa_uniprot_all.gaf in the same directory as the SWISSPROT --db (the
+standard layout alongside uniprot_sprot*.dmnd), override with
+--gene_ontology_result or disable with --skip_go.
+
 Usage
 -----
     GAQET2AHRD.py --gaqet_log GAQET.log.txt --ahrd_jar /opt/ahrd/ahrd.jar \\
@@ -59,6 +64,10 @@ DEFAULT_TREMBL_DESC_SCORE_BIT_SCORE_WEIGHT = 2.590211
 DEFAULT_TOKEN_SCORE_BIT_SCORE_WEIGHT = 0.468
 DEFAULT_TOKEN_SCORE_DATABASE_SCORE_WEIGHT = 0.2098
 DEFAULT_TOKEN_SCORE_OVERLAP_SCORE_WEIGHT = 0.3221
+
+# UniProt GOA GAF format: column 1 "UniProtKB", column 2 accession, column 4
+# qualifier (excluded when it's a negation, "NOT|..."), column 5 GO term.
+DEFAULT_REFERENCE_GO_REGEX = r"^UniProtKB\\t(?<shortAccession>[^\\t]+)\\t[^\\t]+\\t(?!NOT\\|)[^\\t]*\\t(?<goTerm>GO:\\d{7})"
 
 
 def parse_gaqet_log(path: Path) -> dict:
@@ -122,7 +131,7 @@ def build_ahrd_config(
     token_bit_score_weight: float, token_database_score_weight: float,
     token_overlap_score_weight: float,
     blacklist: Path, swissprot_filter: Path, trembl_filter: Path,
-    token_blacklist: Path,
+    token_blacklist: Path, gene_ontology_result: Path,
 ) -> str:
     def db_block(name: str, weight: int, desc_weight: float,
                  out_file: Path, db_fasta: Path, filter_file: Path) -> str:
@@ -141,15 +150,24 @@ def build_ahrd_config(
             lines.append(f"    token_blacklist: {token_blacklist}")
         return "\n".join(lines)
 
+    go_block = ""
+    if gene_ontology_result:
+        go_block = (
+            f"gene_ontology_result: {gene_ontology_result}\n"
+            f'reference_go_regex: "{DEFAULT_REFERENCE_GO_REGEX}"\n'
+            f"prefer_reference_with_go_annos: true\n"
+        )
+
     return (
         f"proteins_fasta: {proteins_fasta}\n"
         f"token_score_bit_score_weight: {token_bit_score_weight}\n"
         f"token_score_database_score_weight: {token_database_score_weight}\n"
         f"token_score_overlap_score_weight: {token_overlap_score_weight}\n"
+        f"{go_block}"
+        f"output: {output_tsv}\n"
         f"blast_dbs:\n"
         f"{db_block('swissprot', swissprot_weight, swissprot_desc_weight, swissprot_out, swissprot_fasta, swissprot_filter)}\n"
         f"{db_block('trembl', trembl_weight, trembl_desc_weight, trembl_out, trembl_fasta, trembl_filter)}\n"
-        f"output: {output_tsv}\n"
     )
 
 
@@ -237,6 +255,15 @@ def main(argv=None):
                          "swissprot and trembl (default: "
                          "{ahrd_home}/test/resources/blacklist_token.txt "
                          "if --ahrd_home is set, else omitted)")
+    ap.add_argument("--gene_ontology_result", type=Path, default=None,
+                    help="GO Annotation (GAF) file for GO term transfer, "
+                         "e.g. goa_uniprot_all.gaf (default: "
+                         "goa_uniprot_all.gaf in the same directory as the "
+                         "SWISSPROT --db from GAQET.log.txt)")
+    ap.add_argument("--skip_go", action="store_true",
+                    help="Do not transfer GO terms (omit gene_ontology_"
+                         "result/reference_go_regex/prefer_reference_with_"
+                         "go_annos from the config)")
     ap.add_argument("--skip_ahrd", action="store_true",
                     help="Write the AHRD config only; do not invoke AHRD")
     ap.add_argument("--dry_run", action="store_true",
@@ -292,6 +319,17 @@ def main(argv=None):
                   f"the extension; pass a matching file there or fix the "
                   f"path manually in the generated config)", file=sys.stderr)
 
+    gene_ontology_result = None
+    if not args.skip_go:
+        gene_ontology_result = (args.gene_ontology_result
+                                 or parsed["swissprot_db"].parent / "goa_uniprot_all.gaf")
+        if not gene_ontology_result.exists():
+            print(f"WARNING: gene_ontology_result file not found: "
+                  f"{gene_ontology_result} (defaulted to goa_uniprot_all.gaf "
+                  f"next to the SWISSPROT --db; pass --gene_ontology_result "
+                  f"to point at the right file, or --skip_go to omit GO "
+                  f"term transfer)", file=sys.stderr)
+
     prefix = find_gaqet_prefix(args.gaqet_log)
     output_dir = args.output or (args.gaqet_log.parent / "AHRD_run")
     config_path = output_dir / f"{prefix}_AHRD_config.yml"
@@ -304,6 +342,8 @@ def main(argv=None):
               f"database={swissprot_fasta}", file=sys.stderr)
         print(f"  TrEMBL      : file={parsed['trembl_out']} "
               f"database={trembl_fasta}", file=sys.stderr)
+        print(f"  GO terms    : {gene_ontology_result if gene_ontology_result else 'skipped (--skip_go)'}",
+              file=sys.stderr)
         if args.skip_ahrd:
             print("  AHRD run    : skipped (--skip_ahrd)", file=sys.stderr)
         else:
@@ -329,6 +369,7 @@ def main(argv=None):
         token_overlap_score_weight=args.token_overlap_score_weight,
         blacklist=blacklist, swissprot_filter=swissprot_filter,
         trembl_filter=trembl_filter, token_blacklist=token_blacklist,
+        gene_ontology_result=gene_ontology_result,
     )
     config_path.write_text(config_text)
     print(f"Written: {config_path}", file=sys.stderr)
