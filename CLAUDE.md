@@ -13,14 +13,31 @@ Apply those standards to any new scripts added here.
 
 ## Scripts
 
+**FASTA_Utilities**
+
 | Script | Purpose |
 |---|---|
 | `scripts/FastaRename.py` | Rename sequence IDs in a FASTA file using a two-column TSV mapping |
 | `scripts/FastaStats.py` | Compute per-sequence and summary statistics for a FASTA file |
 | `scripts/GFA2FASTA.py` | Convert GFA assembly graph format to FASTA |
+
+**GenomicData_Download**
+
+| Script | Purpose |
+|---|---|
 | `scripts/NCBI_DownloadGenome.py` | Download genome FASTA/GFF3 from NCBI (accessions.txt, same format as annotseba), optional SeqID renaming |
-| `scripts/GetFasta4EarlGreyGFF.py` | Extract FASTA sequences for TE features from an EarlGrey repeat-annotation GFF3, strand-aware, sanitized headers |
+
+**GFF_Utilities**
+
+| Script | Purpose |
+|---|---|
 | `scripts/GFF3RenameGenes.py` | Systematically rename gene/transcript/exon/CDS/UTR IDs in a GFF3 using a fixed SeqID-based numbering scheme, preserving old IDs as OldFeatID= |
+
+**ThirdPartyTool_Utilities**
+
+| Script | Purpose |
+|---|---|
+| `scripts/GetFasta4EarlGreyGFF.py` | Extract FASTA sequences for TE features from an EarlGrey repeat-annotation GFF3, strand-aware, sanitized headers |
 | `scripts/GFF2BEDOrthoVenn.py` | Convert a GFF3 file to the 5-column BED format (SeqID, GeneID, Start, End, Strand) expected by OrthoVennPlus |
 | `scripts/GAQET2AHRD.py` | Parse a GAQET run's GAQET.log.txt for its TREMBL/SWISSPROT diamond commands, build an AHRD YAML config, and run AHRD |
 
