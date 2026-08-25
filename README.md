@@ -470,3 +470,19 @@ GAQET2AHRD.py --gaqet_log GAQET.log.txt --dry_run
 - The AHRD output filename prefix is taken from GAQET's own `{prefix}_GAQET.stats.tsv` file, found by globbing `--gaqet_log`'s directory; falls back to `AHRD` if not found.
 - A warning (not an error) is printed if the log's success marker (`run successfully`) isn't found after either command, or if any referenced file (proteins FASTA, diamond output, derived DB FASTA, blacklist/filter files) doesn't exist on disk — the config is still written so paths can be corrected by hand if needed.
 - Default weights match a validated real-world AHRD config tuned for plant genome annotation; override any of them per-run as needed.
+
+## Third-party tools and citations
+
+These scripts don't bundle or depend on the tools below at import time (no
+external Python dependencies, per the design principles above) — they
+generate inputs/configs for them or parse their output. Cite the
+corresponding tool if you use it via one of these scripts:
+
+| Tool | Used by | Citation |
+|---|---|---|
+| [AHRD](https://github.com/groupschoof/AHRD) | `GAQET2AHRD.py` | Hallab A. et al. *AHRD — Automated Assignment of Human Readable Descriptions.* github.com/groupschoof/AHRD |
+| [DIAMOND](https://github.com/bbuchfink/diamond) | `GAQET2AHRD.py` (consumes its output) | Buchfink B, Reuter K, Drost HG. Sensitive protein alignments at tree-of-life scale using DIAMOND. *Nat Methods.* 2021;18:366–368. doi:[10.1038/s41592-021-01101-x](https://doi.org/10.1038/s41592-021-01101-x) |
+| [Earl Grey](https://github.com/TobyBaril/EarlGrey) | `GetFasta4EarlGreyGFF.py` | Baril T, Galbraith J, Hayward A. Earl Grey: A Fully Automated User-Friendly Transposable Element Annotation and Analysis Pipeline. *Mol Biol Evol.* 2024;41(4):msae068. doi:[10.1093/molbev/msae068](https://doi.org/10.1093/molbev/msae068) |
+| [OrthoVenn3](https://orthovenn3.bioinfotoolkits.net/) | `GFF2BEDOrthoVenn.py` | Sun J. et al. OrthoVenn3: an integrated platform for exploring and visualizing orthologous data across genomes. *Nucleic Acids Res.* 2023;51(W1):W397–W403. doi:[10.1093/nar/gkad313](https://doi.org/10.1093/nar/gkad313) |
+| [NCBI Datasets](https://www.ncbi.nlm.nih.gov/datasets/) | `NCBI_DownloadGenome.py` | O'Leary NA. et al. Exploring and retrieving sequence and metadata for species across the tree of life with NCBI Datasets. *Sci Data.* 2024;11:732. doi:[10.1038/s41597-024-03571-y](https://doi.org/10.1038/s41597-024-03571-y) |
+| [GAQET](https://github.com/aubombarely/GAQET) | `GAQET2AHRD.py` (input format) | Bombarely A. *GAQET.* github.com/aubombarely/GAQET |
