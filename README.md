@@ -27,9 +27,12 @@ A collection of general-purpose command-line scripts for genomics and genome ann
 
 ## Scripts
 
+
 ---
 
-## ![FASTA_Utilities](https://img.shields.io/badge/-FASTA__Utilities-4C9BE8?style=for-the-badge)
+## <img src="https://img.shields.io/badge/-FASTA__Utilities-4C9BE8?style=for-the-badge" height="34" alt="FASTA_Utilities">
+
+<br>
 
 ### FastaRename.py
 
@@ -66,6 +69,10 @@ scaffold_1  chr3
 - SeqIDs not found in the mapping are kept unchanged with a warning.
 - Output sequences are wrapped at 60 characters per line.
 - Stats (renamed/unchanged counts) are printed to stderr.
+
+<br>
+
+---
 
 ### FastaStats.py
 
@@ -108,6 +115,10 @@ B V D N`); any other character is reported under `other`.
 - GC content, N content, and per-base percentages are computed over total
   assembly length.
 
+<br>
+
+---
+
 ### GFA2FASTA.py
 
 Extract segment sequences from a GFA (v1 or v2) assembly graph and write them
@@ -140,9 +151,12 @@ GFA2FASTA.py --input assembly.gfa --output assembly.fasta --summary summary.txt
 - Output sequences are wrapped at 60 characters per line.
 - Stats (segments written/skipped, total length) are printed to stderr.
 
+
 ---
 
-## ![GenomicData_Download](https://img.shields.io/badge/-GenomicData__Download-F5A623?style=for-the-badge)
+## <img src="https://img.shields.io/badge/-GenomicData__Download-F5A623?style=for-the-badge" height="34" alt="GenomicData_Download">
+
+<br>
 
 ### NCBI_DownloadGenome.py
 
@@ -271,9 +285,12 @@ to recompute from a fresh download in that case.
   (`Install Certificates.command`, or `pip install certifi`).
 - Stats (sequences renamed, files written) are printed to stderr.
 
+
 ---
 
-## ![GFF_Utilities](https://img.shields.io/badge/-GFF__Utilities-888888?style=for-the-badge)
+## <img src="https://img.shields.io/badge/-GFF__Utilities-888888?style=for-the-badge" height="34" alt="GFF_Utilities">
+
+<br>
 
 ### GFF3RenameGenes.py
 
@@ -360,9 +377,12 @@ UTR:        {transcript_ID}UTR{utr_number}      e.g. PhangC01G000010T01UTR01
 - Output is grouped by SeqID (natural sort order) then by gene → transcript → subfeature, not raw input file order.
 - Stats (gene/transcript/subfeature/passthrough counts, and warnings for missing IDs or unresolved Parent references) are printed to stderr.
 
+
 ---
 
-## ![ThirdPartyTool_Utilities](https://img.shields.io/badge/-ThirdPartyTool__Utilities-E8604C?style=for-the-badge)
+## <img src="https://img.shields.io/badge/-ThirdPartyTool__Utilities-E8604C?style=for-the-badge" height="34" alt="ThirdPartyTool_Utilities">
+
+<br>
 
 ### GetFasta4EarlGreyGFF.py
 
@@ -428,6 +448,10 @@ produces:
 - Output sequences are wrapped at 60 characters per line.
 - Extraction stats (extracted/skipped counts) are printed to stderr.
 
+<br>
+
+---
+
 ### GFF2BEDOrthoVenn.py
 
 Convert a GFF3 file to the 5-column BED format expected by
@@ -468,6 +492,10 @@ GFF2BEDOrthoVenn.py --gff annotation.gff3 --dry_run
 - Coordinates are copied as-is from the GFF3 (1-based, inclusive) — this matches OrthoVennPlus's expected layout, not 0-based BED.
 - Rows are sorted by `(SeqID, Start)`, SeqID in natural sort order.
 - Stats (rows written, skipped-for-missing-ID count) are printed to stderr.
+
+<br>
+
+---
 
 ### GAQET2AHRD.py
 
