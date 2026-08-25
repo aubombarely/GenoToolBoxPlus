@@ -27,7 +27,9 @@ A collection of general-purpose command-line scripts for genomics and genome ann
 
 ## Scripts
 
-## FASTA_Utilities
+---
+
+## ![FASTA_Utilities](https://img.shields.io/badge/-FASTA__Utilities-4C9BE8?style=for-the-badge)
 
 ### FastaRename.py
 
@@ -138,7 +140,9 @@ GFA2FASTA.py --input assembly.gfa --output assembly.fasta --summary summary.txt
 - Output sequences are wrapped at 60 characters per line.
 - Stats (segments written/skipped, total length) are printed to stderr.
 
-## GenomicData_Download
+---
+
+## ![GenomicData_Download](https://img.shields.io/badge/-GenomicData__Download-F5A623?style=for-the-badge)
 
 ### NCBI_DownloadGenome.py
 
@@ -267,7 +271,9 @@ to recompute from a fresh download in that case.
   (`Install Certificates.command`, or `pip install certifi`).
 - Stats (sequences renamed, files written) are printed to stderr.
 
-## GFF_Utilities
+---
+
+## ![GFF_Utilities](https://img.shields.io/badge/-GFF__Utilities-888888?style=for-the-badge)
 
 ### GFF3RenameGenes.py
 
@@ -354,7 +360,9 @@ UTR:        {transcript_ID}UTR{utr_number}      e.g. PhangC01G000010T01UTR01
 - Output is grouped by SeqID (natural sort order) then by gene → transcript → subfeature, not raw input file order.
 - Stats (gene/transcript/subfeature/passthrough counts, and warnings for missing IDs or unresolved Parent references) are printed to stderr.
 
-## ThirdPartyTool_Utilities
+---
+
+## ![ThirdPartyTool_Utilities](https://img.shields.io/badge/-ThirdPartyTool__Utilities-E8604C?style=for-the-badge)
 
 ### GetFasta4EarlGreyGFF.py
 
@@ -362,6 +370,18 @@ Extract FASTA sequences for TE features from an
 [EarlGrey](https://github.com/TobyBaril/EarlGrey) repeat-annotation GFF3,
 where column 3 is the TE type (e.g. `LINE/L1`, `LTR/Copia`) and the
 attributes carry an `ID=` (the repeat family ID, e.g. `RND-1_FAMILY-789`).
+
+**Rationale**
+
+Earl Grey annotates TE locations in a GFF3 but doesn't itself export the
+matching nucleotide sequences per family — that's a separate manual step
+most pipelines need for downstream work (building/curating a repeat
+library, running the family through a classifier, BLASTing a specific
+insertion). This script closes that gap: it reads Earl Grey's GFF3 and
+genome FASTA directly, so no intermediate `bedtools getfasta` command with
+its own coordinate/strand bookkeeping is needed, and the output headers are
+already tagged with family ID, TE type, and genomic location for
+traceability back to the annotation.
 
 **Usage**
 
@@ -414,6 +434,17 @@ Convert a GFF3 file to the 5-column BED format expected by
 [OrthoVennPlus](https://orthovenn3.bioinfotoolkits.net/):
 `SeqID  GeneID  Start  End  Strand`.
 
+**Rationale**
+
+OrthoVennPlus needs gene coordinates in its own 5-column layout, not
+standard GFF3 or 0-based BED, and every genome annotation pipeline in this
+workspace outputs GFF3. Rather than hand-writing an `awk`/`cut` one-liner
+per project (and re-deriving the right column order and 1-based
+coordinates each time), this script does the conversion directly from the
+GFF3 `gene` features, so a GAQET/annotation run's output can be fed into
+an OrthoVennPlus comparison without an intermediate manual reformatting
+step.
+
 **Usage**
 
 ```bash
@@ -440,10 +471,25 @@ GFF2BEDOrthoVenn.py --gff annotation.gff3 --dry_run
 
 ### GAQET2AHRD.py
 
-Parse a [GAQET](https://github.com/aubombarely/GAQET) run's `GAQET.log.txt`
+Parse a [GAQET](https://github.com/victorgcb1987/GAQET2) run's `GAQET.log.txt`
 for the exact TREMBL/SWISSPROT `diamond blastp` commands it used, build an
 [AHRD](https://github.com/groupschoof/AHRD) YAML config from them, and (by
 default) run AHRD via `java -jar $AHRD_JAR config.yml`.
+
+**Rationale**
+
+GAQET already runs the two diamond homology searches AHRD needs (TREMBL
+and SWISSPROT) as part of its QC pipeline, but doesn't run AHRD itself or
+generate its config — assembling an AHRD YAML by hand means re-typing the
+same diamond output paths already sitting in `GAQET.log.txt`, guessing at
+weight/scoring parameters, and remembering to wire up the GOA file for GO
+term transfer, all error-prone and easy to get subtly wrong (e.g. omitting
+`gene_ontology_result` silently produces a config that runs fine but
+transfers zero GO terms). This script closes that integration gap: it
+reuses the search results GAQET already computed instead of re-running
+diamond, and encodes a validated set of AHRD parameters as defaults, so
+functional annotation becomes a single command that follows directly from
+a GAQET run rather than a separate, manually-configured step.
 
 **Usage**
 
@@ -503,4 +549,4 @@ corresponding tool if you use it via one of these scripts:
 | [Earl Grey](https://github.com/TobyBaril/EarlGrey) | `GetFasta4EarlGreyGFF.py` | Baril T, Galbraith J, Hayward A. Earl Grey: A Fully Automated User-Friendly Transposable Element Annotation and Analysis Pipeline. *Mol Biol Evol.* 2024;41(4):msae068. doi:[10.1093/molbev/msae068](https://doi.org/10.1093/molbev/msae068) |
 | [OrthoVenn3](https://orthovenn3.bioinfotoolkits.net/) | `GFF2BEDOrthoVenn.py` | Sun J. et al. OrthoVenn3: an integrated platform for exploring and visualizing orthologous data across genomes. *Nucleic Acids Res.* 2023;51(W1):W397–W403. doi:[10.1093/nar/gkad313](https://doi.org/10.1093/nar/gkad313) |
 | [NCBI Datasets](https://www.ncbi.nlm.nih.gov/datasets/) | `NCBI_DownloadGenome.py` | O'Leary NA. et al. Exploring and retrieving sequence and metadata for species across the tree of life with NCBI Datasets. *Sci Data.* 2024;11:732. doi:[10.1038/s41597-024-03571-y](https://doi.org/10.1038/s41597-024-03571-y) |
-| [GAQET](https://github.com/aubombarely/GAQET) | `GAQET2AHRD.py` (input format) | Bombarely A. *GAQET.* github.com/aubombarely/GAQET |
+| [GAQET2](https://github.com/victorgcb1987/GAQET2) | `GAQET2AHRD.py` (input format) | victorgcb1987. *GAQET2.* github.com/victorgcb1987/GAQET2 |

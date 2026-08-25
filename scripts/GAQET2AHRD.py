@@ -3,7 +3,7 @@
 GAQET2AHRD.py — Build an AHRD config from a GAQET run and (optionally) run
 AHRD (https://github.com/groupschoof/AHRD) on it.
 
-GAQET (https://github.com/aubombarely/GAQET) writes a GAQET.log.txt inside
+GAQET (https://github.com/victorgcb1987/GAQET2) writes a GAQET.log.txt inside
 its run directory that records the exact diamond blastp commands used for
 the TREMBL and SWISSPROT homology searches, e.g.:
 
