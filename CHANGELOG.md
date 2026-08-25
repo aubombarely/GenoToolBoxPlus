@@ -3,6 +3,13 @@
 All notable changes to GenoToolBoxPlus are documented here. See `CITATION.cff`
 for the version to cite.
 
+## [v0.2.3] — 2026-08-25
+
+### Added
+- `GAQET2AHRD.py`: the functional-annotation summary is now also printed
+  to stderr as ASCII tables at the end of a run (same metrics as
+  `<prefix>_AHRD.summary.txt`), not just written to file.
+
 ## [v0.2.2] — 2026-08-25
 
 ### Added

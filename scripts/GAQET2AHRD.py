@@ -38,9 +38,10 @@ standard layout alongside uniprot_sprot*.dmnd), override with
 --gene_ontology_result or disable with --skip_go.
 
 After a successful AHRD run, a <prefix>_AHRD.summary.txt is written next to
-the AHRD output TSV: counts of proteins with a description/GO term(s) vs.
+the AHRD output TSV (counts of proteins with a description/GO term(s) vs.
 unknown, the AHRD-Quality-Code distribution, and the --top_n most abundant
-descriptions. Use --skip_summary to omit it.
+descriptions), and the same summary is printed to stderr as ASCII tables.
+Use --skip_summary to omit both.
 
 Usage
 -----
@@ -61,7 +62,7 @@ import sys
 from collections import Counter
 from pathlib import Path
 
-VERSION = "v0.1.0"
+VERSION = "v0.2.0"
 
 DEFAULT_TOP_N = 10
 
@@ -240,6 +241,65 @@ def summarize_ahrd_output(tsv_path: Path) -> dict:
         "quality_counts": quality_counts,
         "desc_counts": desc_counts,
     }
+
+
+def _ascii_table(headers: list, rows: list, left_align: set = None) -> list:
+    """Return list of strings forming an ASCII box table. Column 0 is
+    left-aligned by default (and any extra indices in left_align); the
+    rest are right-aligned, matching the usual text-then-numbers layout."""
+    left_align = left_align if left_align is not None else {0}
+    widths = [max(len(h), *(len(r[i]) for r in rows)) if rows else len(h)
+              for i, h in enumerate(headers)]
+    sep = "+" + "+".join("-" * (w + 2) for w in widths) + "+"
+
+    def fmt_row(cells):
+        parts = []
+        for i, cell in enumerate(cells):
+            padded = cell.ljust(widths[i]) if i in left_align else cell.rjust(widths[i])
+            parts.append(f" {padded} ")
+        return "|" + "|".join(parts) + "|"
+
+    lines = [sep, fmt_row(headers), sep]
+    for r in rows:
+        lines.append(fmt_row(r))
+    lines.append(sep)
+    return lines
+
+
+def print_ahrd_summary_tables(summary: dict, top_n: int) -> None:
+    def pct(n: int) -> str:
+        return f"{100 * n / summary['n_total']:.1f}%" if summary["n_total"] else "0.0%"
+
+    print("", file=sys.stderr)
+    print("AHRD functional annotation summary:", file=sys.stderr)
+    overview_rows = [
+        ["Total proteins", str(summary["n_total"]), "100.0%"],
+        ["With description", str(summary["n_with_desc"]), pct(summary["n_with_desc"])],
+        ["Unknown / no description", str(summary["n_unknown"]), pct(summary["n_unknown"])],
+        ["With GO term(s)", str(summary["n_with_go"]), pct(summary["n_with_go"])],
+    ]
+    for line in _ascii_table(["Metric", "Count", "Percent"], overview_rows):
+        print(line, file=sys.stderr)
+
+    print("", file=sys.stderr)
+    print("AHRD-Quality-Code distribution:", file=sys.stderr)
+    if summary["quality_counts"]:
+        quality_rows = [[code, str(count), pct(count)]
+                        for code, count in summary["quality_counts"].most_common()]
+        for line in _ascii_table(["Quality Code", "Count", "Percent"], quality_rows):
+            print(line, file=sys.stderr)
+    else:
+        print("  (no AHRD-Quality-Code column found in the output TSV)", file=sys.stderr)
+
+    print("", file=sys.stderr)
+    print(f"Top {top_n} most abundant descriptions:", file=sys.stderr)
+    if summary["desc_counts"]:
+        desc_rows = [[str(rank), str(count), desc] for rank, (desc, count)
+                    in enumerate(summary["desc_counts"].most_common(top_n), start=1)]
+        for line in _ascii_table(["Rank", "Count", "Description"], desc_rows, left_align={2}):
+            print(line, file=sys.stderr)
+    else:
+        print("  (no annotated descriptions found)", file=sys.stderr)
 
 
 def write_ahrd_summary(summary: dict, tsv_path: Path, out_path: Path, top_n: int) -> None:
@@ -500,9 +560,7 @@ def main(argv=None):
     summary_path = output_tsv.with_suffix(".summary.txt")
     write_ahrd_summary(summary, output_tsv, summary_path, args.top_n)
     print(f"Written: {summary_path}", file=sys.stderr)
-    print(f"  {summary['n_with_desc']}/{summary['n_total']} proteins with "
-          f"description, {summary['n_with_go']}/{summary['n_total']} with "
-          f"GO term(s)", file=sys.stderr)
+    print_ahrd_summary_tables(summary, args.top_n)
 
 
 if __name__ == "__main__":

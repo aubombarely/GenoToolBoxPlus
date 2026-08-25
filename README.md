@@ -1,6 +1,6 @@
 # GenoToolBoxPlus
 
-<img src="https://img.shields.io/badge/version-v0.2.2-teal"/> <img src="https://img.shields.io/badge/python-3.9%2B-blue"/> <img src="https://img.shields.io/badge/platform-Linux%20%7C%20macOS-lightgrey"/> [Changelog](CHANGELOG.md)
+<img src="https://img.shields.io/badge/version-v0.2.3-teal"/> <img src="https://img.shields.io/badge/python-3.9%2B-blue"/> <img src="https://img.shields.io/badge/platform-Linux%20%7C%20macOS-lightgrey"/> [Changelog](CHANGELOG.md)
 
 A collection of general-purpose command-line scripts for genomics and genome annotation tasks. See [`CITATION.cff`](CITATION.cff) for how to cite this collection.
 
@@ -581,7 +581,7 @@ GAQET2AHRD.py --gaqet_log GAQET.log.txt --dry_run
 | `--gene_ontology_result` | No | GO Annotation (GAF) file for GO term transfer (default: `goa_uniprot_all.gaf` in the same directory as the SWISSPROT `--db` from `GAQET.log.txt`) |
 | `--skip_go` | No | Do not transfer GO terms (omit `gene_ontology_result`/`reference_go_regex`/`prefer_reference_with_go_annos` from the config) |
 | `--top_n` | No | Number of most abundant descriptions to list in the summary (default: `10`) |
-| `--skip_summary` | No | Do not write `<prefix>_AHRD.summary.txt` after AHRD finishes |
+| `--skip_summary` | No | Do not write `<prefix>_AHRD.summary.txt` or print the summary tables after AHRD finishes |
 | `--skip_ahrd` | No | Write the config only; do not invoke AHRD |
 | `--dry_run` | No | Parse the log and print what would be written/run, then exit |
 | `--version` | No | Show version and exit |
@@ -597,26 +597,37 @@ GAQET2AHRD.py --gaqet_log GAQET.log.txt --dry_run
 **Summary report**
 
 After a successful AHRD run, `<prefix>_AHRD.summary.txt` is written next
-to the AHRD output TSV (skip with `--skip_summary`):
+to the AHRD output TSV, and the same summary is printed to stderr as ASCII
+tables (skip both with `--skip_summary`):
 
 ```
-AHRD functional annotation summary
-Source: Abeliophyllum_distichum_ANv1_AHRD.tsv
-
-Total proteins             : 34521
-With description           : 29876 (86.5%)
-Unknown / no description   : 4645 (13.5%)
-With GO term(s)            : 24103 (69.8%)
+AHRD functional annotation summary:
++--------------------------+-------+---------+
+| Metric                   | Count | Percent |
++--------------------------+-------+---------+
+| Total proteins           | 34521 |  100.0% |
+| With description         | 29876 |   86.5% |
+| Unknown / no description |  4645 |   13.5% |
+| With GO term(s)          | 24103 |   69.8% |
++--------------------------+-------+---------+
 
 AHRD-Quality-Code distribution:
-  ***        18204  (52.7%)
-  **-         6532  (18.9%)
-  ...
++--------------+-------+---------+
+| Quality Code | Count | Percent |
++--------------+-------+---------+
+| ***          | 18204 |   52.7% |
+| **-          |  6532 |   18.9% |
+| ...          |   ... |     ... |
++--------------+-------+---------+
 
 Top 10 most abundant descriptions:
-   1.    412  Putative disease resistance protein
-   2.    298  Reverse transcriptase
-   ...
++------+-------+--------------------------------------+
+| Rank | Count | Description                          |
++------+-------+--------------------------------------+
+|    1 |   412 | Putative disease resistance protein  |
+|    2 |   298 | Reverse transcriptase                |
+|  ... |   ... | ...                                   |
++------+-------+--------------------------------------+
 ```
 
 Column positions (description, GO term, AHRD-Quality-Code) are located by
