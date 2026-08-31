@@ -1,6 +1,6 @@
 # GenoToolBoxPlus
 
-<img src="https://img.shields.io/badge/version-v0.2.6-teal"/> <img src="https://img.shields.io/badge/python-3.9%2B-blue"/> <img src="https://img.shields.io/badge/platform-Linux%20%7C%20macOS-lightgrey"/> [Changelog](CHANGELOG.md)
+<img src="https://img.shields.io/badge/version-v0.3.0-teal"/> <img src="https://img.shields.io/badge/python-3.9%2B-blue"/> <img src="https://img.shields.io/badge/platform-Linux%20%7C%20macOS-lightgrey"/> [Changelog](CHANGELOG.md)
 
 A collection of general-purpose command-line scripts for genomics and genome annotation tasks. See [`CITATION.cff`](CITATION.cff) for how to cite this collection.
 
@@ -13,6 +13,7 @@ A collection of general-purpose command-line scripts for genomics and genome ann
 
 **GenomicData_Download**
 - [NCBI_DownloadGenome.py](#ncbi_downloadgenomepy) — Download genome FASTA/GFF3 from NCBI with optional SeqID renaming
+- [GWH4FastaRename.py](#gwh4fastarenamepy) — Rename SeqIDs in a local FASTA using GWH headers already present in the file, no download
 
 **GFF_Utilities**
 - [GFF3RenameGenes.py](#gff3renamegenespy) — Systematically rename gene models in a GFF3 file
@@ -170,6 +171,7 @@ GFA2FASTA.py --input assembly.gfa --output assembly.fasta --summary summary.txt
 ## <img src="https://img.shields.io/badge/-GenomicData__Download-F5A623?style=for-the-badge" height="42" alt="GenomicData_Download">
 
 - [NCBI_DownloadGenome.py](#ncbi_downloadgenomepy) — Download genome FASTA/GFF3 from NCBI with optional SeqID renaming
+- [GWH4FastaRename.py](#gwh4fastarenamepy) — Rename SeqIDs in a local FASTA using GWH headers already present in the file, no download
 
 <br>
 
@@ -300,6 +302,90 @@ to recompute from a fresh download in that case.
   (`Install Certificates.command`, or `pip install certifi`).
 - Stats (sequences renamed, files written) are printed to stderr.
 
+<br>
+
+### GWH4FastaRename.py
+
+Rename sequence IDs in a FASTA file whose headers are already in GWH
+(Genome Warehouse) format. Unlike `NCBI_DownloadGenome.py`, this script
+does not download anything — it operates on a FASTA file you already have
+locally, and derives the new SeqID/description from the GWH header fields
+already present in that file.
+
+**Usage**
+
+```bash
+GWH4FastaRename.py --fasta genome.gwh.fasta --output renamed.fasta
+GWH4FastaRename.py --fasta genome.gwh.fasta --output renamed.fasta --prefix Sp
+GWH4FastaRename.py --fasta genome.gwh.fasta --output renamed.fasta --equiv equiv.tsv
+GWH4FastaRename.py --fasta genome.gwh.fasta --dry_run
+```
+
+**Arguments**
+
+| Argument | Required | Description |
+|----------|----------|-------------|
+| `--fasta` | Yes | Input FASTA file with GWH-format headers |
+| `--output` | No | Output renamed FASTA file (default: stdout) |
+| `--equiv` | No | Equivalence TSV path (`gwh_id`, `oriseqid`, `category`, `new_seqid`). Default: `{output}.equiv_seqID.txt` when `--output` is given; skipped (with a note) when writing to stdout and `--equiv` isn't set |
+| `--prefix` | No | Prefix for renamed sequence IDs (default: `Sp`) |
+| `--dry_run` | No | Parse and classify the FASTA, print what would be renamed, then exit without writing any output |
+| `--version` | No | Show version and exit |
+| `--help` | No | Show help and exit |
+
+**GWH header format**
+
+Fields are whitespace-separated; the optional free-text category and
+`Complete=`/`Circular=` fields vary by submission, but `OriSeqID=` is
+required on every record:
+
+```
+>GWHBJVE00000001    OriSeqID=Chr13    Len=38709045
+>GWHDUBQ00000001    Chromosome 1    Complete=T    Circular=F    OriSeqID=Chr01    Len=45819973
+>GWHDUBQ00000014    OriSeqID=contig0001    Len=45917
+```
+
+**SeqID renaming scheme**
+
+Same CHR/SCF/CTG/MIT/PLT categories, numbering, and zero-padding rules as
+`NCBI_DownloadGenome.py` (see above), with the chromosome number sourced
+from GWH fields instead of an NCBI-style description:
+
+| Category | New ID | How it's detected | Number source |
+|---|---|---|---|
+| Chromosome | `{prefix}C##` | Free text says "Chromosome N", **or** `OriSeqID` is a strict `Chr<digits>` label (e.g. `Chr01`) | Parsed from whichever matched |
+| Mitochondrion | `{prefix}MIT##` | Free text or `OriSeqID` says mitochondrion | Order of appearance |
+| Chloroplast / plastid | `{prefix}PLT##` | Free text or `OriSeqID` says chloroplast / plastid | Order of appearance |
+| Scaffold | `{prefix}SCF##` | Not chromosome/organelle, and the **sequence itself contains an N** | Order of appearance |
+| Contig | `{prefix}CTG##` | Not chromosome/organelle, and the sequence has **no N** | Order of appearance |
+
+`OriSeqID` labels like `ChrUN10` (unplaced/unlocalized chromosome-scale
+sequences, a common GWH convention) are **not** treated as chromosomes —
+the letters after `Chr` make the label fail the strict `Chr<digits>`
+pattern, so these fall through to the SCF/CTG split by sequence content
+like any other non-chromosome sequence.
+
+**Output**
+
+Renamed FASTA headers are `>{new_id}` with the original description
+stripped. The equivalence table has one row per sequence:
+
+```
+gwh_id	oriseqid	category	new_seqid
+GWHBJVE00000001	Chr13	CHR	SpC13
+GWHBJVE00000002	Chr4	CHR	SpC04
+GWHBJVE00000014	ChrUN10	CTG	SpCTG01
+```
+
+**Sanity checks**
+
+Every GWH ID must be unique and every record must have an `OriSeqID=`
+field; both are validated in a single streaming pass over the file before
+any renaming happens, aborting with a clear error otherwise.
+
+**Notes**
+- Standard library only — no network access, no external dependencies.
+- Streams the FASTA line-by-line; never holds a full sequence in memory.
 
 <br>
 

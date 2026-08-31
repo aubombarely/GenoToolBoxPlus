@@ -3,6 +3,18 @@
 All notable changes to GenoToolBoxPlus are documented here. See `CITATION.cff`
 for the version to cite.
 
+## [v0.3.0] — 2026-08-31
+
+### Added
+- `GWH4FastaRename.py`: renames SeqIDs in a local FASTA file whose headers
+  are already in GWH (Genome Warehouse) format (`>GWHxxxxxxxx OriSeqID=...
+  Len=...`, with optional free-text category and Complete=/Circular=
+  fields). Reuses `NCBI_DownloadGenome.py`'s CHR/SCF/CTG/MIT/PLT
+  classification and numbering scheme, sourced from OriSeqID/free-text
+  instead of NCBI's description field, and does not download anything.
+  Writes a renamed FASTA (description stripped) plus a
+  `gwh_id`/`oriseqid`/`category`/`new_seqid` equivalence table.
+
 ## [v0.2.6] — 2026-08-25
 
 ### Fixed

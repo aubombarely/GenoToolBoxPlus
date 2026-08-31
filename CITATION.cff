@@ -6,18 +6,19 @@ abstract: >
   utilities for genomics and genome annotation tasks, grouped into
   FASTA_Utilities, GenomicData_Download, GFF_Utilities, and
   ThirdPartyTool_Utilities. Scripts include FASTA renaming and statistics,
-  GFA-to-FASTA conversion, NCBI genome/annotation download, systematic GFF3
-  gene-model renaming, EarlGrey TE FASTA extraction, GFF3-to-BED conversion
-  for OrthoVennPlus, and AHRD functional-annotation config generation from
-  GAQET runs. Each script uses the Python standard library only and runs in
-  any Python 3.10+ environment without conda.
+  GFA-to-FASTA conversion, NCBI genome/annotation download, GWH-header-based
+  SeqID renaming, systematic GFF3 gene-model renaming, EarlGrey TE FASTA
+  extraction, GFF3-to-BED conversion for OrthoVennPlus, and AHRD
+  functional-annotation config generation from GAQET runs. Each script uses
+  the Python standard library only and runs in any Python 3.10+ environment
+  without conda.
 authors:
   - family-names: Bombarely
     given-names: Aureliano
     email: aubombarely@gmail.com
     orcid: "https://orcid.org/0000-0001-6257-8914"
-version: "v0.2.6"
-date-released: "2026-08-25"
+version: "v0.3.0"
+date-released: "2026-08-31"
 license: MIT
 repository-code: "https://github.com/aubombarely/GenoToolBoxPlus"
 keywords:

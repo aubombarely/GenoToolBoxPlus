@@ -28,6 +28,7 @@ Apply those standards to any new scripts added here.
 | Script | Purpose |
 |---|---|
 | `scripts/NCBI_DownloadGenome.py` | Download genome FASTA/GFF3 from NCBI (accessions.txt, same format as annotseba), optional SeqID renaming |
+| `scripts/GWH4FastaRename.py` | Rename SeqIDs in a local FASTA using GWH (Genome Warehouse) headers already present in the file — same CHR/SCF/CTG/MIT/PLT scheme as `NCBI_DownloadGenome.py`, no download |
 
 **GFF_Utilities**
 
