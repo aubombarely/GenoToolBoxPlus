@@ -1,6 +1,6 @@
 # GenoToolBoxPlus
 
-<img src="https://img.shields.io/badge/version-v1.0.0-teal"/> <img src="https://img.shields.io/badge/python-3.9%2B-blue"/> <img src="https://img.shields.io/badge/platform-Linux%20%7C%20macOS-lightgrey"/> [Changelog](CHANGELOG.md)
+<img src="https://img.shields.io/badge/version-v1.0.1-teal"/> <img src="https://img.shields.io/badge/python-3.9%2B-blue"/> <img src="https://img.shields.io/badge/platform-Linux%20%7C%20macOS-lightgrey"/> [Changelog](CHANGELOG.md)
 
 A collection of general-purpose command-line scripts for genomics and genome annotation tasks. See [`CITATION.cff`](CITATION.cff) for how to cite this collection.
 
@@ -848,6 +848,7 @@ minimap2 -a -x asm5 --secondary=no joint_Ntom_Nsyl.fasta tabacum_assembly.fasta 
 | `--parent1_name` | No | Label written to the output BED for parent 1 (default: `Parent1`) |
 | `--parent2_name` | No | Label written to the output BED for parent 2 (default: `Parent2`) |
 | `--output` | No | Output BED file (default: stdout) |
+| `--per_seq_summary` | No | Also write a per-query-sequence TSV breakdown (bp and % for each parent, ambiguous, and unclassified split into `no_alignment` vs `low_coverage`) — use to see whether ambiguous/unclassified bp concentrate in a few sequences or are spread diffusely (default: not written) |
 | `--window_size` | No | Window size in bp for majority-vote calls (default: `10000`) |
 | `--min_mapq` | No | Minimum MAPQ for an alignment record to be used (default: `5`) |
 | `--min_aln_len` | No | Minimum aligned query length in bp for an alignment record to be used (default: `1000`) |
@@ -862,10 +863,10 @@ minimap2 -a -x asm5 --secondary=no joint_Ntom_Nsyl.fasta tabacum_assembly.fasta 
 - Output is BED5: `QuerySeqID  Start  End  Label  Score` (0-based, half-open), sorted by `(QuerySeqID, Start)`. `Label` is `--parent1_name`, `--parent2_name`, `ambiguous`, or `unclassified`. `Score` (0–1000) is the winning label's share of covered bp within the window, scaled — use it as a QC/confidence signal, not a hard cutoff.
 - Only primary and supplementary alignment records are used by default; secondary (multi-mapping) records are ignored unless `--include_secondary` is set, since they usually reflect within-genome repeats rather than genuine ambiguity between the two parents.
 - Query coordinates are resolved from the CIGAR's soft/hard clips back to the *original* (forward-strand) query sequence, so + and − strand alignment records for the same query contig are directly comparable — this matters for supplementary (split/chimeric) alignments at subgenome breakpoints.
-- A window's `unclassified` call means too little of it is covered by any used alignment (`--min_coverage`), not that it was checked and found ambiguous between the two parents — that's a separate `ambiguous` call (`--ambiguity_margin`).
+- A window's `unclassified` call means too little of it is covered by any used alignment (`--min_coverage`), not that it was checked and found ambiguous between the two parents — that's a separate `ambiguous` call (`--ambiguity_margin`). `--per_seq_summary` further splits `unclassified` into `no_alignment` (zero coverage — e.g. a mapping gap, or genuinely unassembled/missing in one parent reference) vs `low_coverage` (some coverage, but below `--min_coverage` — often a sign of a repetitive or structurally rearranged region).
 - Adjacent windows sharing the same label are merged into one BED interval; confidence in a merged interval is the length-weighted average of its windows'.
 - `--parent1_pattern`/`--parent2_pattern` must each match at least one `@SQ` target and must not both match the same target — the script aborts with example target names if the patterns don't cleanly separate the two subgenomes.
-- A summary (reference targets classified, alignment records used/filtered, total bp per label) is printed to stderr.
+- A summary (reference targets classified, alignment records used/filtered, total bp per label, `unclassified` split by reason) is printed to stderr.
 
 ## Third-party tools and citations
 

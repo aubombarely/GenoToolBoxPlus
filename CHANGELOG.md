@@ -3,6 +3,16 @@
 All notable changes to GenoToolBoxPlus are documented here. See `CITATION.cff`
 for the version to cite.
 
+## [v1.0.1] — 2026-09-10
+
+### Added
+- `SAM2SubgenomeBED.py`: `--per_seq_summary` writes a per-query-sequence
+  TSV breakdown (bp/% per parent, ambiguous, and unclassified split into
+  `no_alignment` vs `low_coverage`), so imbalance between the two
+  subgenomes or a high unclassified fraction can be traced to specific
+  query sequences before further analysis. The stderr summary now also
+  splits `unclassified` by reason.
+
 ## [v1.0.0] — 2026-09-10
 
 ### Added

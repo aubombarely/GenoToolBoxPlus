@@ -4,7 +4,7 @@ Collection of general-purpose, zero-dependency CLI scripts for genomics and
 genome annotation tasks. Each script is self-contained and uses the Python
 standard library only.
 
-**Current version:** v1.0.0 (overall repo/citation version, tracked in
+**Current version:** v1.0.1 (overall repo/citation version, tracked in
 `CITATION.cff` and `CHANGELOG.md`; each script also carries its own
 independent `VERSION` string for `--version`/troubleshooting)
 

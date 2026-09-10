@@ -48,7 +48,7 @@ import re
 import sys
 from pathlib import Path
 
-VERSION = "v0.2.0"
+VERSION = "v0.3.0"
 
 DEFAULT_WINDOW_SIZE     = 10000
 DEFAULT_MIN_MAPQ        = 5
@@ -158,7 +158,11 @@ def parse_sam(sam_path: Path, target_labels: dict, min_mapq: int,
 def window_labels(query_len: int, aln_intervals: list, window_size: int,
                   min_coverage: float, ambiguity_margin: float,
                   parent1_name: str, parent2_name: str) -> list:
-    """Return per-window (start, end, label, confidence) for one query."""
+    """Return per-window (start, end, label, confidence, reason) for one
+    query. reason is set only for label == 'unclassified'
+    ('no_alignment' vs 'low_coverage'), else None. Windows exactly
+    partition [0, query_len), so summing win lengths per label/reason
+    gives an exact per-query breakdown."""
     n_windows = (query_len + window_size - 1) // window_size
     p1_bp = [0] * n_windows
     p2_bp = [0] * n_windows
@@ -184,7 +188,9 @@ def window_labels(query_len: int, aln_intervals: list, window_size: int,
 
         if frac_covered < min_coverage or covered == 0:
             label, conf = "unclassified", 0.0
+            reason = "no_alignment" if covered == 0 else "low_coverage"
         else:
+            reason = None
             total = p1_bp[w] + p2_bp[w]
             diff_frac = abs(p1_bp[w] - p2_bp[w]) / total
             if diff_frac < ambiguity_margin:
@@ -192,15 +198,16 @@ def window_labels(query_len: int, aln_intervals: list, window_size: int,
             else:
                 label = parent1_name if p1_bp[w] > p2_bp[w] else parent2_name
                 conf = max(p1_bp[w], p2_bp[w]) / total
-        windows.append((win_start, win_end, label, conf))
+        windows.append((win_start, win_end, label, conf, reason))
     return windows
 
 
 def merge_windows(windows: list) -> list:
     """Collapse adjacent windows sharing the same label into one interval,
-    averaging confidence weighted by window length."""
+    averaging confidence weighted by window length. Drops the per-window
+    'reason' (only meaningful pre-merge, for per-query stats)."""
     merged = []
-    for start, end, label, conf in windows:
+    for start, end, label, conf, _reason in windows:
         if merged and merged[-1][2] == label:
             p_start, p_end, p_label, p_conf, p_len = merged[-1]
             new_len = p_len + (end - start)
@@ -209,6 +216,19 @@ def merge_windows(windows: list) -> list:
         else:
             merged.append((start, end, label, conf, end - start))
     return [(s, e, l, c) for s, e, l, c, _ in merged]
+
+
+def summarize_windows(windows: list, parent1_name: str, parent2_name: str) -> dict:
+    """Per-query bp breakdown from the raw (pre-merge) window list."""
+    totals = {parent1_name: 0, parent2_name: 0, "ambiguous": 0,
+              "unclassified_no_alignment": 0, "unclassified_low_coverage": 0}
+    for start, end, label, _conf, reason in windows:
+        length = end - start
+        if label == "unclassified":
+            totals[f"unclassified_{reason}"] += length
+        else:
+            totals[label] += length
+    return totals
 
 
 # ── Output ───────────────────────────────────────────────────────────────
@@ -237,6 +257,14 @@ def main(argv=None):
                          "with 'samtools view -h'.")
     ap.add_argument("--output", type=Path, default=None,
                     help="Output BED file (default: stdout)")
+    ap.add_argument("--per_seq_summary", type=Path, default=None,
+                    help="Also write a per-query-sequence TSV breakdown "
+                         "(bp and %% for each parent, ambiguous, and "
+                         "unclassified split into no_alignment vs "
+                         "low_coverage) — use this to see whether "
+                         "ambiguous/unclassified bp concentrate in a few "
+                         "sequences or are spread diffusely, before "
+                         "plotting (default: not written)")
     ap.add_argument("--parent1_name", default="Parent1",
                     help="Label written to the output BED for the first "
                          "parental subgenome (default: 'Parent1')")
@@ -371,30 +399,68 @@ def main(argv=None):
         sys.exit(1)
 
     out_fh = open(args.output, "w") if args.output else sys.stdout
-    totals = {args.parent1_name: 0, args.parent2_name: 0,
-              "ambiguous": 0, "unclassified": 0}
+    per_seq_fh = open(args.per_seq_summary, "w") if args.per_seq_summary else None
+    totals = {args.parent1_name: 0, args.parent2_name: 0, "ambiguous": 0,
+              "unclassified_no_alignment": 0, "unclassified_low_coverage": 0}
     try:
+        if per_seq_fh:
+            per_seq_fh.write(
+                "QuerySeqID\tLength\t"
+                f"{args.parent1_name}_bp\t{args.parent1_name}_pct\t"
+                f"{args.parent2_name}_bp\t{args.parent2_name}_pct\t"
+                "Ambiguous_bp\tAmbiguous_pct\t"
+                "Unclassified_NoAlignment_bp\tUnclassified_NoAlignment_pct\t"
+                "Unclassified_LowCoverage_bp\tUnclassified_LowCoverage_pct\n"
+            )
         for qname in sorted(intervals):
+            query_len = query_lengths[qname]
             windows = window_labels(
-                query_lengths[qname], intervals[qname], args.window_size,
+                query_len, intervals[qname], args.window_size,
                 args.min_coverage, args.ambiguity_margin,
                 args.parent1_name, args.parent2_name,
             )
             merged = merge_windows(windows)
             write_bed(out_fh, qname, merged)
-            for start, end, label, _ in merged:
-                totals[label] += end - start
+
+            seq_totals = summarize_windows(windows, args.parent1_name, args.parent2_name)
+            for key, bp in seq_totals.items():
+                totals[key] += bp
+            if per_seq_fh:
+                def _pct(bp):
+                    return round(100 * bp / query_len, 2) if query_len else 0.0
+                per_seq_fh.write(
+                    f"{qname}\t{query_len}\t"
+                    f"{seq_totals[args.parent1_name]}\t{_pct(seq_totals[args.parent1_name])}\t"
+                    f"{seq_totals[args.parent2_name]}\t{_pct(seq_totals[args.parent2_name])}\t"
+                    f"{seq_totals['ambiguous']}\t{_pct(seq_totals['ambiguous'])}\t"
+                    f"{seq_totals['unclassified_no_alignment']}\t"
+                    f"{_pct(seq_totals['unclassified_no_alignment'])}\t"
+                    f"{seq_totals['unclassified_low_coverage']}\t"
+                    f"{_pct(seq_totals['unclassified_low_coverage'])}\n"
+                )
     finally:
         if args.output:
             out_fh.close()
+        if per_seq_fh:
+            per_seq_fh.close()
 
     total_bp = sum(totals.values())
+    unclassified_bp = (totals["unclassified_no_alignment"]
+                        + totals["unclassified_low_coverage"])
     print(f"\nSubgenome classification summary ({total_bp:,} bp total, "
           f"{len(intervals)} query sequence(s)):", file=sys.stderr)
-    for label in (args.parent1_name, args.parent2_name, "ambiguous", "unclassified"):
+    for label in (args.parent1_name, args.parent2_name, "ambiguous"):
         pct = 100 * totals[label] / total_bp if total_bp else 0.0
         print(f"  {label:<13}: {totals[label]:>14,} bp ({pct:5.1f}%)",
               file=sys.stderr)
+    pct = 100 * unclassified_bp / total_bp if total_bp else 0.0
+    print(f"  {'unclassified':<13}: {unclassified_bp:>14,} bp ({pct:5.1f}%)"
+          f"  [no_alignment: {totals['unclassified_no_alignment']:,} bp, "
+          f"low_coverage: {totals['unclassified_low_coverage']:,} bp]",
+          file=sys.stderr)
+    if per_seq_fh:
+        print(f"  Per-query-sequence breakdown written to "
+              f"{args.per_seq_summary}", file=sys.stderr)
 
 
 if __name__ == "__main__":
