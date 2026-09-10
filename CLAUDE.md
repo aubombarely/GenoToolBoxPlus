@@ -4,7 +4,7 @@ Collection of general-purpose, zero-dependency CLI scripts for genomics and
 genome annotation tasks. Each script is self-contained and uses the Python
 standard library only.
 
-**Current version:** v0.2.1 (overall repo/citation version, tracked in
+**Current version:** v1.0.0 (overall repo/citation version, tracked in
 `CITATION.cff` and `CHANGELOG.md`; each script also carries its own
 independent `VERSION` string for `--version`/troubleshooting)
 
@@ -43,6 +43,12 @@ Apply those standards to any new scripts added here.
 | `scripts/GetFasta4EarlGreyGFF.py` | Extract FASTA sequences for TE features from an EarlGrey repeat-annotation GFF3, strand-aware, sanitized headers |
 | `scripts/GFF2BEDOrthoVenn.py` | Convert a GFF3 file to the 5-column BED format (SeqID, GeneID, Start, End, Strand) expected by OrthoVennPlus |
 | `scripts/GAQET2AHRD.py` | Parse a GAQET run's GAQET.log.txt for its TREMBL/SWISSPROT diamond commands, build an AHRD YAML config, and run AHRD |
+
+**Comparative_Polyploidy_Utilities**
+
+| Script | Purpose |
+|---|---|
+| `scripts/SAM2SubgenomeBED.py` | Classify regions of a polyploid assembly by parental subgenome of origin from a SAM alignment against a concatenated parental reference; generic two-parent split via `--parent1_name`/`--parent2_name`, windowed majority-vote BED output |
 
 ## Versioning policy (overrides the general blueprint policy for this project)
 

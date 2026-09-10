@@ -3,6 +3,25 @@
 All notable changes to GenoToolBoxPlus are documented here. See `CITATION.cff`
 for the version to cite.
 
+## [v1.0.0] — 2026-09-10
+
+### Added
+- New `Comparative_Polyploidy_Utilities` script group.
+- `scripts/SAM2SubgenomeBED.py`: classifies regions of a polyploid
+  assembly by parental subgenome of origin from a SAM alignment of the
+  assembly against a concatenated parental reference (e.g. Nicotiana
+  tabacum vs. a joint N. tomentosiformis + N. sylvestris FASTA).
+  Resolves primary and supplementary alignment CIGARs back to original,
+  forward-strand query coordinates; tallies coverage in fixed-size
+  windows; each window is majority-vote labelled by parent, `ambiguous`
+  if the two parents are too close to call, or `unclassified` if too
+  little of the window is covered. Adjacent same-label windows are
+  merged into BED5 intervals (`QuerySeqID Start End Label Score`).
+  Parent names/patterns (`--parent1_name`/`--parent1_pattern`,
+  `--parent2_name`/`--parent2_pattern`) are required arguments rather
+  than hardcoded, so the same script applies to any two-parent
+  allopolyploid.
+
 ## [v0.3.0] — 2026-08-31
 
 ### Added

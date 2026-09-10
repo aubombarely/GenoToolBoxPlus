@@ -1,6 +1,6 @@
 # GenoToolBoxPlus
 
-<img src="https://img.shields.io/badge/version-v0.3.0-teal"/> <img src="https://img.shields.io/badge/python-3.9%2B-blue"/> <img src="https://img.shields.io/badge/platform-Linux%20%7C%20macOS-lightgrey"/> [Changelog](CHANGELOG.md)
+<img src="https://img.shields.io/badge/version-v1.0.0-teal"/> <img src="https://img.shields.io/badge/python-3.9%2B-blue"/> <img src="https://img.shields.io/badge/platform-Linux%20%7C%20macOS-lightgrey"/> [Changelog](CHANGELOG.md)
 
 A collection of general-purpose command-line scripts for genomics and genome annotation tasks. See [`CITATION.cff`](CITATION.cff) for how to cite this collection.
 
@@ -22,6 +22,9 @@ A collection of general-purpose command-line scripts for genomics and genome ann
 - [GetFasta4EarlGreyGFF.py](#getfasta4earlgreygffpy) — Extract FASTA sequences for TE features from an EarlGrey GFF3
 - [GFF2BEDOrthoVenn.py](#gff2bedorthovennpy) — Convert a GFF3 file to the 5-column BED format expected by OrthoVennPlus
 - [GAQET2AHRD.py](#gaqet2ahrdpy) — Build an AHRD config from a GAQET run and run AHRD
+
+**Comparative_Polyploidy_Utilities**
+- [SAM2SubgenomeBED.py](#sam2subgenomebedpy) — Tag a polyploid assembly by parental subgenome of origin from a SAM alignment against a concatenated parental reference
 
 ## Requirements
 
@@ -783,6 +786,87 @@ nucleocapsid/assembly components); override with `--te_goterms_file`
   independent evidence (reference GOA GO terms vs. TEsort/InterPro
   domain calls).
 
+## <img src="https://img.shields.io/badge/-Comparative__Polyploidy__Utilities-F5A623?style=for-the-badge" height="42" alt="Comparative_Polyploidy_Utilities">
+
+- [SAM2SubgenomeBED.py](#sam2subgenomebedpy) — Tag a polyploid assembly by parental subgenome of origin from a SAM alignment against a concatenated parental reference
+
+<br>
+
+### SAM2SubgenomeBED.py
+
+Classify regions of a polyploid assembly as derived from one parental
+subgenome or the other, from a SAM alignment of the assembly against a
+concatenated parental reference (both parent genomes in one joint
+FASTA, sequence names distinguishable by a prefix/pattern). Outputs a
+BED file per query sequence, windowed and majority-vote labelled.
+
+**Rationale**
+
+Allopolyploid genomes (e.g. Nicotiana tabacum from N. tomentosiformis x
+N. sylvestris; many crop polyploids follow the same pattern) combine two
+parental subgenomes, and knowing which region came from which parent is
+routinely needed for downstream comparative/evolutionary analysis. If
+the polyploid assembly is mapped as the query against a single joint
+reference containing both parents, minimap2's own alignment placement
+already answers "which parent does this region best match" — this
+script turns that SAM into a usable per-region BED call instead of
+requiring a bespoke parsing script per project. It is deliberately
+generic (parent names/patterns are arguments, not hardcoded), so the
+same script applies to any two-parent allopolyploid, not just tobacco.
+
+**Usage**
+
+```bash
+SAM2SubgenomeBED.py --sam tabacum_vs_joint.sam \
+    --parent1_name Ntom --parent1_pattern '^Ntom' \
+    --parent2_name Nsyl --parent2_pattern '^Nsyl' \
+    --output subgenomes.bed
+
+SAM2SubgenomeBED.py --sam wheat_vs_joint.sam \
+    --parent1_name A_genome --parent1_pattern '^chrA' \
+    --parent2_name B_genome --parent2_pattern '^chrB' \
+    --window_size 20000
+
+SAM2SubgenomeBED.py --sam tabacum_vs_joint.sam \
+    --parent1_pattern Ntom --parent2_pattern Nsyl --dry_run
+```
+
+Generating the input SAM:
+
+```bash
+minimap2 -a -x asm5 --secondary=no joint_Ntom_Nsyl.fasta tabacum_assembly.fasta \
+    > tabacum_vs_joint.sam
+```
+
+**Arguments**
+
+| Argument | Required | Description |
+|----------|----------|-------------|
+| `--sam` | Yes | Input SAM file (assembly-vs-joint-reference alignment, e.g. `minimap2 -a -x asm5`). BAM is not supported (stdlib-only script) — convert first with `samtools view -h`. |
+| `--parent1_pattern` | Yes | Regex matched against `@SQ` target names to identify parent 1's subgenome |
+| `--parent2_pattern` | Yes | Regex matched against `@SQ` target names to identify parent 2's subgenome |
+| `--parent1_name` | No | Label written to the output BED for parent 1 (default: `Parent1`) |
+| `--parent2_name` | No | Label written to the output BED for parent 2 (default: `Parent2`) |
+| `--output` | No | Output BED file (default: stdout) |
+| `--window_size` | No | Window size in bp for majority-vote calls (default: `10000`) |
+| `--min_mapq` | No | Minimum MAPQ for an alignment record to be used (default: `5`) |
+| `--min_aln_len` | No | Minimum aligned query length in bp for an alignment record to be used (default: `1000`) |
+| `--min_coverage` | No | Minimum fraction of a window that must be covered by used alignments to make a call, otherwise `unclassified` (default: `0.5`) |
+| `--ambiguity_margin` | No | Minimum relative difference between parent1/parent2 covered bp within a window to call a side; below this the window is `ambiguous` (default: `0.1`) |
+| `--include_secondary` | No | Also use secondary alignment records (FLAG `0x100`), not just primary and supplementary |
+| `--dry_run` | No | Parse the SAM header and report target classification, then exit without processing alignment records |
+| `--version` | No | Show version and exit |
+| `--help` | No | Show help and exit |
+
+**Notes**
+- Output is BED5: `QuerySeqID  Start  End  Label  Score` (0-based, half-open), sorted by `(QuerySeqID, Start)`. `Label` is `--parent1_name`, `--parent2_name`, `ambiguous`, or `unclassified`. `Score` (0–1000) is the winning label's share of covered bp within the window, scaled — use it as a QC/confidence signal, not a hard cutoff.
+- Only primary and supplementary alignment records are used by default; secondary (multi-mapping) records are ignored unless `--include_secondary` is set, since they usually reflect within-genome repeats rather than genuine ambiguity between the two parents.
+- Query coordinates are resolved from the CIGAR's soft/hard clips back to the *original* (forward-strand) query sequence, so + and − strand alignment records for the same query contig are directly comparable — this matters for supplementary (split/chimeric) alignments at subgenome breakpoints.
+- A window's `unclassified` call means too little of it is covered by any used alignment (`--min_coverage`), not that it was checked and found ambiguous between the two parents — that's a separate `ambiguous` call (`--ambiguity_margin`).
+- Adjacent windows sharing the same label are merged into one BED interval; confidence in a merged interval is the length-weighted average of its windows'.
+- `--parent1_pattern`/`--parent2_pattern` must each match at least one `@SQ` target and must not both match the same target — the script aborts with example target names if the patterns don't cleanly separate the two subgenomes.
+- A summary (reference targets classified, alignment records used/filtered, total bp per label) is printed to stderr.
+
 ## Third-party tools and citations
 
 These scripts don't bundle or depend on the tools below at import time (no
@@ -798,3 +882,4 @@ corresponding tool if you use it via one of these scripts:
 | [OrthoVenn3](https://orthovenn3.bioinfotoolkits.net/) | `GFF2BEDOrthoVenn.py` | Sun J. et al. OrthoVenn3: an integrated platform for exploring and visualizing orthologous data across genomes. *Nucleic Acids Res.* 2023;51(W1):W397–W403. doi:[10.1093/nar/gkad313](https://doi.org/10.1093/nar/gkad313) |
 | [NCBI Datasets](https://www.ncbi.nlm.nih.gov/datasets/) | `NCBI_DownloadGenome.py` | O'Leary NA. et al. Exploring and retrieving sequence and metadata for species across the tree of life with NCBI Datasets. *Sci Data.* 2024;11:732. doi:[10.1038/s41597-024-03571-y](https://doi.org/10.1038/s41597-024-03571-y) |
 | [GAQET2](https://github.com/victorgcb1987/GAQET2) | `GAQET2AHRD.py` (input format) | victorgcb1987. *GAQET2.* github.com/victorgcb1987/GAQET2 |
+| [minimap2](https://github.com/lh3/minimap2) | `SAM2SubgenomeBED.py` (input format) | Li H. Minimap2: pairwise alignment for nucleotide sequences. *Bioinformatics.* 2018;34(18):3094–3100. doi:[10.1093/bioinformatics/bty191](https://doi.org/10.1093/bioinformatics/bty191) |
